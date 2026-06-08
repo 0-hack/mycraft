@@ -38,8 +38,9 @@ export class Player {
     this.staminaLocked = false; // forced cooldown after depletion
     this._effSprint = false;    // actually sprinting this frame
     this.fallStart = this.pos.y;
-    this.canFly = false;   // granted by the server (admin / wings permission)
-    this.flying = false;   // actively holding jump to fly this frame
+    this.canFly = false;     // granted by the server (admin / wings permission)
+    this.flightMode = false; // toggled on/off; only flies while this is on
+    this.flying = false;     // actually in the air under flight this frame
     // Players spawn in the air and drop to the ground; that first landing must
     // never deal fall damage. Cleared the moment we first touch ground.
     this.spawnFalling = true;
@@ -99,10 +100,10 @@ export class Player {
       if (this.staminaLocked && this.stamina >= 1) this.staminaLocked = false;
     }
 
-    // Wings: flight starts when you hold the jump/fly control, and continues
-    // while you stay airborne. Landing (and releasing) returns you to walking,
-    // so you don't auto-hover at spawn or when simply stepping off a ledge.
-    const wantFly = this.canFly && !this.inWater && (this.input.jump || (!this.onGround && this.flying));
+    // Wings: flight is an explicit toggle (flightMode). While it's off you walk
+    // and jump normally — even with wings. While it's on you fly: hold jump/fly
+    // to climb, and steer with movement + look angle.
+    const wantFly = this.canFly && this.flightMode && !this.inWater;
     this.flying = wantFly;
 
     if (wantFly) {

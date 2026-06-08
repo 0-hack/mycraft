@@ -210,7 +210,12 @@ function setupNetwork() {
     if (msg.state) {
       currentStats = { ...currentStats, ...msg.state };
       if (msg.state.equipment) applyEquipment(msg.state.equipment);
-      if (msg.state.progress) applyProgress(msg.state.progress);
+      if (msg.state.progress) applyProgress(msg.state.progress); // updates maxHealth
+      // Keep the player's HP in sync with the authoritative state too (heals,
+      // regen, etc.), in case a 'health' push was missed or arrived out of order.
+      if (player && typeof msg.state.health === 'number') {
+        player.health = Math.max(0, Math.min(player.maxHealth || 20, msg.state.health));
+      }
       ui.updateStats(currentStats);
     }
   });
@@ -277,6 +282,7 @@ function setupNetwork() {
   net.on('groundItemRemove', (msg) => removeGround(msg.id));
   net.on('mobSpawn', (msg) => { addMob(msg.mob); if (msg.mob.type === 'boss') showBoss(msg.mob); });
   net.on('mobs', (msg) => { for (const u of msg.mobs) { const e = mobEntities.get(u.id); if (e) { e.target.set(u.x, u.y, u.z); e.yaw = u.yaw; e.st = u.st; } } });
+  net.on('mobAttack', (msg) => { const e = mobEntities.get(msg.id); if (e) e.attackT = 1; }); // lunge/swing
   net.on('mobHit', (msg) => {
     const e = mobEntities.get(msg.id);
     if (!e) return;
@@ -427,7 +433,7 @@ function useSkillSlot(slot) {
     const from = camera.position.clone().addScaledVector(aimDirection(), 0.8);
     if (sk.cat === 'magic') {
       shootProjectile(from, aimDirection(), skillColor(sk),
-        { to: t && t.point ? t.point.clone() : null, size: 0.34, maxDist: 30 });
+        { to: t && t.point ? t.point.clone() : null, size: 0.45, maxDist: 30, speed: 15 });
     } else if (t && t.point) {
       shootTracer(camera.position.clone(), t.point, skillColor(sk));
     }
@@ -634,15 +640,35 @@ let canFly = false;
 function setCanFly(v) {
   const was = canFly;
   canFly = !!v;
-  if (player) player.canFly = canFly;
-  const ind = document.getElementById('fly-indicator');
-  if (ind) ind.classList.toggle('hidden', !canFly);
-  const flyBtn = document.getElementById('btn-fly'); // mobile hold-to-fly
+  if (player) { player.canFly = canFly; if (!canFly) player.flightMode = false; }
+  const flyBtn = document.getElementById('btn-fly'); // mobile fly toggle button
   if (flyBtn) flyBtn.classList.toggle('hidden', !canFly);
+  refreshFlyIndicator();
   if (thirdPerson) rebuildOwnAvatar(); // show/hide the wings on the avatar
   if (canFly && !was) ui.toast(isTouchDevice()
-    ? '🪽 Wings granted! Hold the 🪽 button (right side) to fly.'
-    : '🪽 Wings granted! Hold Space to fly — steer with WASD + look.');
+    ? '🪽 Wings granted! Tap the 🪽 button (right) to toggle flight.'
+    : '🪽 Wings granted! Press G to toggle flight (hold Space to climb).');
+}
+
+// Flight is a toggle: turn it on to fly (hold Space / the look-tap to climb,
+// steer with movement + look), turn it off to walk and jump normally.
+function toggleFlight() {
+  if (!player || !player.canFly) return;
+  player.flightMode = !player.flightMode;
+  const btn = document.getElementById('btn-fly');
+  if (btn) btn.classList.toggle('flying', player.flightMode);
+  refreshFlyIndicator();
+  ui.toast(player.flightMode ? '🪽 Flight ON' : '🚶 Flight OFF');
+}
+
+function refreshFlyIndicator() {
+  const ind = document.getElementById('fly-indicator');
+  if (!ind) return;
+  ind.classList.toggle('hidden', !canFly);
+  if (!canFly) return;
+  ind.textContent = (player && player.flightMode)
+    ? '🪽 Flying — climb: ' + (isTouchDevice() ? 'tap' : 'Space') + ' · steer: move + look'
+    : (isTouchDevice() ? '🪽 Tap 🪽 to fly' : '🪽 Press G to fly');
 }
 
 // ---- custom respawn point ----
@@ -719,6 +745,7 @@ function setupInput() {
   if (isTouchDevice()) {
     setupMobileControls(player, ui, {
       onPrimaryDown: primaryDown, onPrimaryUp: primaryUp, onPlace: placeBlock, onView: toggleView,
+      onToggleFly: toggleFlight,
     });
   }
   setupDesktopControls();
@@ -803,6 +830,7 @@ function setupDesktopControls() {
     if (e.code === 'Escape' && ui.anyMenuOpen()) { ui.closeAll(); return; }
     if (e.code === 'KeyV' && !chatOpen && !ui.anyMenuOpen()) { toggleView(); return; }
     if (e.code === 'KeyM' && !chatOpen) { toggleSound(); return; }
+    if (e.code === 'KeyG' && !chatOpen && !ui.anyMenuOpen()) { toggleFlight(); return; } // wings on/off
     if (e.code === 'KeyQ' && !chatOpen && !ui.anyMenuOpen()) { net.sendUseConsumable('medkit'); return; }
     if (e.code === 'KeyF' && !chatOpen && !ui.anyMenuOpen()) { net.sendUseConsumable('food'); return; }
     if (chatOpen || ui.anyMenuOpen()) return;
@@ -921,7 +949,7 @@ function primaryDown() {
     audio.play(w.cat === 'magic' ? 'skillMagic' : w.cat === 'ranged' ? 'skillRanged' : 'hit');
     if (w.cat === 'magic') {
       const from = camera.position.clone().addScaledVector(aimDirection(), 0.8);
-      shootProjectile(from, aimDirection(), 0xc98bff, { to: target.point.clone(), size: 0.24, maxDist: 24 });
+      shootProjectile(from, aimDirection(), 0xc98bff, { to: target.point.clone(), size: 0.3, maxDist: 24, speed: 18 });
     } else if (w.cat === 'ranged') {
       shootTracer(camera.position.clone(), target.point, 0xffee88);
     }
@@ -1034,27 +1062,31 @@ function shootTracer(from, to, color) {
 // An obvious glowing projectile that flies from `from` along `dir`. If `to` is
 // given it homes onto that point (a hit); otherwise it streaks ahead and fades
 // after `maxDist` blocks (a miss). Used for the mage's fireball etc.
-function shootProjectile(from, dir, color, { to = null, maxDist = 26, speed = 34, size = 0.32 } = {}) {
+function shootProjectile(from, dir, color, { to = null, maxDist = 26, speed = 16, size = 0.32 } = {}) {
   if (!scene) return;
   const core = new THREE.Mesh(
-    new THREE.SphereGeometry(size, 12, 12),
+    new THREE.SphereGeometry(size, 14, 14),
     new THREE.MeshBasicMaterial({ color }));
   const glow = new THREE.Mesh(
-    new THREE.SphereGeometry(size * 2.1, 12, 12),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35 }));
+    new THREE.SphereGeometry(size * 2.3, 14, 14),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4 }));
   core.add(glow);
   core.position.copy(from);
   scene.add(core);
   const d = dir.clone().normalize();
   let travelled = 0;
   let lastT = performance.now();
+  const startT = lastT;
   const step = () => {
     const now = performance.now();
     const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
     const adv = speed * dt;
     travelled += adv;
     core.position.addScaledVector(d, adv);
-    glow.material.opacity = 0.35 * (1 - travelled / (maxDist * 1.1));
+    // Pulse the glow so the orb is clearly visible as it travels.
+    const pulse = 1 + Math.sin((now - startT) / 60) * 0.15;
+    glow.scale.setScalar(pulse);
+    glow.material.opacity = 0.4 * (1 - travelled / (maxDist * 1.15));
     const reached = to && core.position.distanceTo(to) < 0.8;
     if (reached) { spawnRing(to.clone(), 1.4, color); cleanup(); return; }
     if (travelled >= maxDist) { glow.material.opacity = 0; cleanup(); return; } // fade out, no target
@@ -1502,6 +1534,17 @@ function updateMobs(dt, t) {
     e.group.position.lerp(e.target, a);
     e.group.rotation.y = e.yaw;
     e.group.position.y += Math.sin(t * 4 + e.phase) * 0.04; // subtle bob
+    // Attack tell: lunge toward the target (a jab); legless slimes hop at you.
+    if (e.attackT > 0) {
+      e.attackT = Math.max(0, e.attackT - dt * 3);
+      const k = Math.sin((1 - e.attackT) * Math.PI); // out then back
+      e.group.position.x += Math.sin(e.yaw) * 0.5 * k;
+      e.group.position.z += Math.cos(e.yaw) * 0.5 * k;
+      if (e.type === 'slime') e.group.position.y += 0.55 * k;       // pounce
+      else e.group.rotation.x = -0.4 * k;                            // lean in to strike
+    } else if (e.group.rotation.x) {
+      e.group.rotation.x = 0;
+    }
     if (e.flash > 0) { e.flash -= dt; e.group.scale.setScalar(1 + Math.max(0, e.flash) * 1.2); }
     drawMobStatus(e);
   }
