@@ -782,8 +782,7 @@ export function attachGame(server) {
     }
     const m = { id: nextMobId++, type,
       x: sx, y: round1(anchor.y), z: sz,
-      yaw: 0, health: hp, maxHealth: hp, target: null, lastAttack: 0, effects: {},
-      groundY: round1(anchor.y), vy: 0 }; // ground reference + vertical velocity for gravity
+      yaw: 0, health: hp, maxHealth: hp, target: null, lastAttack: 0, effects: {}, vy: 0 };
     mobs.set(m.id, m);
     broadcast({ type: 'mobSpawn', mob: mobPublic(m) });
     return m;
@@ -849,6 +848,7 @@ export function attachGame(server) {
     const now = Date.now();
     for (const m of mobs.values()) {
       const def = MOB_TYPES[m.type];
+      mobGravity(m, dt); // every monster stays glued to the real ground surface
       // Passive monsters (e.g. slimes) never chase or attack — they just wander.
       if (def.passive) {
         wanderMob(m, dt);
@@ -923,12 +923,8 @@ export function attachGame(server) {
         if (!mobBlocked(nx, m.z, m.y)) m.x = nx;
         if (!mobBlocked(m.x, nz, m.y)) m.z = nz;
       }
-      // The target's footing is our ground reference while it's at a reachable
-      // level; if it flies above us, keep our old ground so gravity pulls us down.
-      const dy = tgt.state.y - m.y;
-      if (Math.abs(dy) <= VERT_LIMIT) m.groundY = round1(tgt.state.y);
-      mobGravity(m, dt); // obey gravity — fall if we're off the ground
       // Can only attack a target on roughly the same level (not one flying above).
+      const dy = tgt.state.y - m.y;
       if (dist <= def.reach && Math.abs(dy) <= VERT_LIMIT && now - m.lastAttack > 1200) {
         m.lastAttack = now;
         broadcast({ type: 'mobAttack', id: m.id }); // play the lunge/swing on clients
@@ -1169,20 +1165,31 @@ function mobBlocked(x, z, y) {
   return isSolidAt(bx, by, bz) || isSolidAt(bx, by + 1, bz);
 }
 
-// Monsters obey gravity: they fall toward their ground level (the surface the
-// player they chase is standing on) and never hover in the air. Stepping up onto
-// slightly higher ground is allowed; chasing a flyer upward is not.
+// The surface a mob at (x,z) should rest its feet on: scan downward starting
+// from the block directly BELOW its feet (never above), so a mob can't "climb"
+// a wall it's standing against — it only finds the ground holding it up. Using
+// the real terrain keeps monsters glued to streets/lobbies, never floating
+// after a flying player.
+function mobFeetY(x, z, fromY) {
+  const bx = Math.floor(x), bz = Math.floor(z);
+  for (let y = Math.ceil(fromY) - 1; y >= 1; y--) {
+    if (isSolidAt(bx, y, bz)) return y + 1; // stand on top of the first solid below
+  }
+  return GEN.GROUND + 1;
+}
+
+// Monsters obey gravity: they fall to the surface beneath them and never hover
+// in the air (so they can't levitate after a flyer) and never climb walls.
 const MOB_GRAVITY = 26;
 function mobGravity(m, dt) {
-  const gy = (m.groundY != null) ? m.groundY : m.y;
-  if (m.y > gy + 0.02) {            // above ground: fall
+  const gy = mobFeetY(m.x, m.z, m.y);
+  if (m.y > gy) {                    // above the ground: fall
     m.vy = (m.vy || 0) - MOB_GRAVITY * dt;
     m.y = round1(m.y + m.vy * dt);
     if (m.y <= gy) { m.y = gy; m.vy = 0; }
-  } else if (m.y < gy - 0.02) {     // below ground: step up onto it
-    m.y = round1(Math.min(gy, m.y + 6 * dt));
-    m.vy = 0;
-  } else { m.vy = 0; }
+  } else {                           // on/at the ground: snap to it (no climbing)
+    m.y = gy; m.vy = 0;
+  }
 }
 
 // Idle drifting for passive / de-aggroed monsters so they feel alive.
@@ -1203,7 +1210,6 @@ function wanderMob(m, dt) {
     else m.wUntil = 0;
     m.yaw = m.wYaw;
   }
-  mobGravity(m, dt); // stay on the ground while wandering
 }
 
 function round1(v) { return Math.round(v * 10) / 10; }

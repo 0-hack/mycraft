@@ -41,7 +41,8 @@ for (const ev of ['pointerdown', 'keydown', 'touchstart']) {
   addEventListener(ev, () => { audio.resume(); audio.startMusic(); }, { once: true });
 }
 let world, player, renderer, scene, camera, highlight;
-let breakOverlay = null, breakMat = null, crackTextures = null;
+let crackGeo = null, crackTextures = null;
+const crackOverlays = new Map(); // "x,y,z" -> crack mesh (persistent per block)
 let selfId = null, username = null;
 let dayLength = 1200000, serverTimeOffset = 0;
 const remotePlayers = new Map(); // netId -> { group, target }
@@ -118,15 +119,10 @@ function setupThree() {
     new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4 }));
   highlight.visible = false;
 
-  // Block-breaking crack overlay: a cube of crack textures (Minecraft-style)
-  // that intensifies through stages as you mine the targeted block.
+  // Block-breaking crack overlays (Minecraft-style). One cube per damaged block
+  // so cracks persist on every block you've chipped, not just the one you aim at.
   crackTextures = makeCrackTextures(8);
-  breakMat = new THREE.MeshBasicMaterial({
-    transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, opacity: 0.95,
-  });
-  breakOverlay = new THREE.Mesh(new THREE.BoxGeometry(1.008, 1.008, 1.008), breakMat);
-  breakOverlay.visible = false;
-  breakOverlay.renderOrder = 2;
+  crackGeo = new THREE.BoxGeometry(1.01, 1.01, 1.01);
 }
 
 // Procedurally drawn crack stages (transparent PNG-like canvases): more and
@@ -172,7 +168,6 @@ function setupNetwork() {
     world.loadEdits(msg.edits);
     minimap.world = world; // lets the minimap render the actual city layout
     scene.add(highlight);
-    if (breakOverlay) scene.add(breakOverlay);
 
     const spawn = (msg.state && Number.isFinite(msg.state.x))
       ? { x: msg.state.x, y: msg.state.y, z: msg.state.z } : SPAWN;
@@ -972,11 +967,12 @@ function damageBlock(r, amount) {
   if (e.dmg >= max) { breakBlock(r); blockDamage.delete(k); return 1; }
   return e.dmg / max;
 }
-// Idle blocks slowly recover (cracks fade) so the map stays bounded.
+// A block keeps its crack state for a while, then very slowly heals if left
+// alone — so progress persists across hits but the map stays bounded.
 function decayBlockDamage(now, dt) {
   for (const [k, e] of blockDamage) {
-    if (now - e.t > 5000) {
-      e.dmg -= e.max * 0.4 * dt; // heal ~2.5s after sitting idle for 5s
+    if (now - e.t > 10000) {
+      e.dmg -= e.max * 0.2 * dt; // heal over ~5s, only after 10s untouched
       if (e.dmg <= 0) blockDamage.delete(k);
     }
   }
@@ -985,7 +981,7 @@ function decayBlockDamage(now, dt) {
 // Fire a visible shot at a block point (gun tracer / wand orb).
 function shootAtBlock(w, point) {
   const from = camera.position.clone().addScaledVector(aimDirection(), 0.8);
-  if (w.cat === 'magic') shootProjectile(from, aimDirection(), 0xc98bff, { to: point.clone(), size: 0.26, maxDist: 24, speed: 22 });
+  if (w.cat === 'magic') shootProjectile(from, aimDirection(), 0xc98bff, { to: point.clone(), size: 0.3, maxDist: 24, speed: 22 });
   else shootTracer(camera.position.clone(), point, 0xffee88);
 }
 
@@ -1049,13 +1045,10 @@ function updateAimUI() {
   if (!el) return;
   if (!player || player.dead) { el.classList.add('hidden'); highlight.visible = false; return; }
   const aim = computeAim(equippedWeapon(myEquipment));
-  if (!aim) { el.classList.add('hidden'); highlight.visible = false; hideCrack(); return; }
+  if (!aim) { el.classList.add('hidden'); highlight.visible = false; return; }
   // 3D wire box on the block (mine) or the placement cell (build).
   if (aim.mode === 'attack') { highlight.visible = false; }
   else { highlight.position.copy(aim.point); highlight.visible = true; }
-  // Show the targeted block's persistent crack state (intensifies as it breaks).
-  if (aim.mode === 'mine') showCrack(aim.r.hit, blockFrac(aim.r.hit));
-  else hideCrack();
   // Project the target to screen and place the bracket.
   _proj.copy(aim.point).project(camera);
   if (_proj.z > 1) { el.classList.add('hidden'); return; }
@@ -1081,41 +1074,79 @@ function primaryUp() {
 
 function updateMining(dt) {
   if (!mineState.active || !player || player.dead || ui.anyMenuOpen()) { if (!mineState.active) setMineBar(0); return; }
-  const r = player.raycast();
-  if (!r) { setMineBar(0); return; }
-  const t = world.getBlock(r.hit.x, r.hit.y, r.hit.z);
-  if (t === B.AIR || t === B.BEDROCK) { setMineBar(0); return; }
   const w = equippedWeapon(myEquipment);
+  const ranged = w.cat === 'ranged' || w.cat === 'magic';
   // Break rate (damage/sec): weapon mining power (axe good, gun/wand weak) × strength.
   const rate = (1 + (w.mine || 0) * 0.4) * miningMult(myProgress);
   mineState.swingT -= dt;
-  if (w.cat === 'ranged' || w.cat === 'magic') {
-    // Shooters chip blocks by firing at them on a cadence; each shot adds a chunk.
+  const r = player.raycast();
+  const t = r ? world.getBlock(r.hit.x, r.hit.y, r.hit.z) : B.AIR;
+  const minable = r && t !== B.AIR && t !== B.BEDROCK;
+
+  if (ranged) {
+    // Shooters fire on a cadence: at a block they chip it open; otherwise they
+    // still throw a projectile out to their range that flies and fades — so the
+    // wand/gun always "shoots" the same way, target or not.
     if (mineState.swingT <= 0) {
       mineState.swingT = 0.4;
       ownSwing = 1;
-      shootAtBlock(w, new THREE.Vector3(r.hit.x + 0.5, r.hit.y + 0.5, r.hit.z + 0.5));
       audio.play(w.cat === 'magic' ? 'skillMagic' : 'skillRanged');
-      setMineBar(damageBlock(r, rate * 0.45));
+      if (minable) {
+        shootAtBlock(w, new THREE.Vector3(r.hit.x + 0.5, r.hit.y + 0.5, r.hit.z + 0.5));
+        setMineBar(damageBlock(r, rate * 0.45));
+      } else {
+        throwShot(w); // nothing to mine: throw into the distance and fade
+        setMineBar(0);
+      }
     } else {
-      setMineBar(blockFrac(r.hit));
+      setMineBar(minable ? blockFrac(r.hit) : 0);
     }
   } else {
+    if (!minable) { setMineBar(0); return; }
     if (mineState.swingT <= 0) { ownSwing = 1; mineState.swingT = 0.45; }
     setMineBar(damageBlock(r, rate * dt)); // melee: continuous chipping
   }
 }
 
-// Show the crack overlay on the targeted block, picking the stage from progress.
-function showCrack(hit, frac) {
-  if (!breakOverlay || !crackTextures) return;
-  const stages = crackTextures.length;
-  const stage = Math.min(stages - 1, Math.floor(frac * stages));
-  if (breakMat.map !== crackTextures[stage]) { breakMat.map = crackTextures[stage]; breakMat.needsUpdate = true; }
-  breakOverlay.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
-  breakOverlay.visible = frac > 0.001;
+// Throw a projectile in the aim direction with no target — it flies out to the
+// weapon's range and fades (consistent with the on-target shot's look).
+function throwShot(w) {
+  const dir = aimDirection();
+  const from = camera.position.clone().addScaledVector(dir, 0.8);
+  if (w.cat === 'magic') shootProjectile(from, dir, 0xc98bff, { size: 0.3, maxDist: w.reach, speed: 22 });
+  else shootTracer(camera.position.clone(), camera.position.clone().addScaledVector(dir, w.reach), 0xffee88);
 }
-function hideCrack() { if (breakOverlay) breakOverlay.visible = false; }
+
+// Render a persistent crack overlay on EVERY damaged block, so the cracks stay
+// visible whether or not you're currently aiming at the block. Overlays are
+// removed when a block fully heals, breaks, or is otherwise gone.
+function updateCracks() {
+  if (!scene || !crackTextures) return;
+  const stages = crackTextures.length;
+  for (const [k, e] of blockDamage) {
+    const frac = Math.min(1, e.dmg / e.max);
+    if (frac <= 0.001) continue;
+    const [x, y, z] = k.split(',').map(Number);
+    const bt = world.getBlock(x, y, z);
+    if (bt === B.AIR || bt === B.BEDROCK) { blockDamage.delete(k); continue; } // gone (e.g. someone else broke it)
+    const stage = Math.min(stages - 1, Math.floor(frac * stages));
+    let mesh = crackOverlays.get(k);
+    if (!mesh) {
+      mesh = new THREE.Mesh(crackGeo, new THREE.MeshBasicMaterial({
+        transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1,
+      }));
+      mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
+      mesh.renderOrder = 2;
+      scene.add(mesh);
+      crackOverlays.set(k, mesh);
+    }
+    if (mesh.material.map !== crackTextures[stage]) { mesh.material.map = crackTextures[stage]; mesh.material.needsUpdate = true; }
+  }
+  // Drop overlays whose blocks are no longer damaged.
+  for (const [k, mesh] of crackOverlays) {
+    if (!blockDamage.has(k)) { scene.remove(mesh); mesh.material.dispose(); crackOverlays.delete(k); }
+  }
+}
 
 // Warn (once) when hunger hits zero — the server then drains health until the
 // player eats. The food bar pulses while starving.
@@ -1765,6 +1796,7 @@ function loop(now) {
 
   updateMining(dt);   // raycasts from the first-person eye (before the camera pulls back)
   decayBlockDamage(now, dt); // idle blocks slowly heal their crack damage
+  updateCracks();            // keep crack overlays on every damaged block
   updateAimUI();
   interpolateRemotes(dt);
   updateMobs(dt, now / 1000);
