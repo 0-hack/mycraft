@@ -216,9 +216,12 @@ export class Player {
     if (this.onDamage) this.onDamage(amount, cause);
   }
 
-  // Authoritative health/dead state pushed by the server.
+  // Authoritative health/dead state pushed by the server. Trust the server's
+  // value (it already caps to the player's real max); the HUD bar clamps the
+  // displayed percentage, so don't clamp here — a stale local maxHealth must
+  // never swallow a heal/medkit.
   setHealth(health, dead) {
-    this.health = Math.max(0, Math.min(this.maxHealth || 20, health));
+    this.health = Math.max(0, health);
     this.dead = !!dead;
   }
 

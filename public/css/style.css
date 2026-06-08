@@ -95,6 +95,10 @@ body.touch #vitals { right: 80px; width: 116px; }
 .vic { font-size: 14px; text-shadow: 0 1px 2px #000; }
 .vtrack { flex: 1; height: 11px; background: rgba(0,0,0,0.55); border-radius: 6px;
   overflow: hidden; border: 1px solid rgba(255,255,255,0.2); }
+/* Hunger empty: pulse the food bar red to warn that health is draining. */
+.vbar.starving .vtrack { border-color: #ff6b6b; animation: starve 0.9s ease-in-out infinite; }
+.vbar.starving .vic { animation: starve 0.9s ease-in-out infinite; }
+@keyframes starve { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 #hp-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #d83b3b, #ff7a7a); transition: width 0.2s; }
 #food-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #c08a2a, #f4d35e); transition: width 0.2s; }
 #stam-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #3a9d6a, #7fe3a0); transition: width 0.12s; }

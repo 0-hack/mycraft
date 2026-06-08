@@ -253,7 +253,7 @@ function setupNetwork() {
       // Keep the player's HP in sync with the authoritative state too (heals,
       // regen, etc.), in case a 'health' push was missed or arrived out of order.
       if (player && typeof msg.state.health === 'number') {
-        player.health = Math.max(0, Math.min(player.maxHealth || 20, msg.state.health));
+        player.health = Math.max(0, msg.state.health);
       }
       ui.updateStats(currentStats);
     }
@@ -310,11 +310,9 @@ function setupNetwork() {
   net.on('pickupSpawn', (msg) => addPickup(msg.pickup));
   net.on('pickupRemove', (msg) => removePickup(msg.id));
   net.on('pickupGot', (msg) => {
-    const parts = [];
-    if (msg.heal) parts.push(`+${msg.heal} ❤️`);
-    if (msg.hunger) parts.push(`+${msg.hunger} 🍗`);
     const label = msg.kind === 'medkit' ? '🩹 Healing patch' : '🍗 Food';
-    ui.toast(msg.stored ? `${label} saved to bag (bar full)` : `${label}\n${parts.join('  ')}`);
+    const key = msg.kind === 'medkit' ? 'Q' : 'F';
+    ui.toast(`${label} added to bag — press ${key} (or the button) to use.`);
     audio.play('pickup');
   });
   net.on('groundItemSpawn', (msg) => addGround(msg.item));
@@ -1119,6 +1117,21 @@ function showCrack(hit, frac) {
 }
 function hideCrack() { if (breakOverlay) breakOverlay.visible = false; }
 
+// Warn (once) when hunger hits zero — the server then drains health until the
+// player eats. The food bar pulses while starving.
+let starvingWarned = false;
+function checkStarving() {
+  if (!player) return;
+  const starving = player.hunger <= 0 && !player.dead;
+  document.getElementById('food-fill')?.closest('.vbar')?.classList.toggle('starving', starving);
+  if (starving && !starvingWarned) {
+    starvingWarned = true;
+    ui.toast('🍖 Starving! Your health is draining — eat food (F or the 🍗 button).');
+  } else if (!starving) {
+    starvingWarned = false;
+  }
+}
+
 function setMineBar(frac) {
   const el = document.getElementById('mine-bar');
   if (!el) return;
@@ -1767,6 +1780,7 @@ function loop(now) {
 
   // HUD vitals.
   ui.updateVitals(player);
+  checkStarving();
   ui.checkAchievements({ ...currentStats, swam });
 
   // Death handling.

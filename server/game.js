@@ -353,22 +353,14 @@ export function attachGame(server) {
           const dx = p.x - s.x, dy = p.y - s.y, dz = p.z - s.z;
           if (dx * dx + dy * dy + dz * dz > PICKUP_GRAB * PICKUP_GRAB) break;
           const def = PICKUP_KINDS[p.kind] || PICKUP_KINDS.medkit;
-          // If the relevant bar is already full, bank it in the bag; else use now.
-          const full = p.kind === 'medkit' ? s.health >= getMaxHp(s) : s.hunger >= 20;
-          let stored = false;
-          if (full) {
-            const cons = safeParse(s.consumables, {});
-            cons[p.kind] = (cons[p.kind] || 0) + 1;
-            s.consumables = JSON.stringify(cons);
-            stored = true;
-          } else {
-            if (def.heal) s.health = clamp(s.health + def.heal, 0, getMaxHp(s));
-            if (def.hunger) s.hunger = clamp(s.hunger + def.hunger, 0, 20);
-            pushHealth(ctx, { hunger: s.hunger });
-          }
+          // Always bank pickups so the player decides when to use them — press Q
+          // (medkit) / F (food) or the on-screen buttons to consume.
+          const cons = safeParse(s.consumables, {});
+          cons[p.kind] = (cons[p.kind] || 0) + 1;
+          s.consumables = JSON.stringify(cons);
           pickups.delete(p.id);
           broadcast({ type: 'pickupRemove', id: p.id });
-          send(ws, { type: 'pickupGot', kind: p.kind, heal: def.heal, hunger: def.hunger, stored });
+          send(ws, { type: 'pickupGot', kind: p.kind, heal: def.heal, hunger: def.hunger, stored: true });
           send(ws, { type: 'stats', state: publicState(s) });
           break;
         }
