@@ -105,8 +105,8 @@ body.touch #vitals { right: 80px; width: 116px; }
 #hotbar-track { display: flex; gap: 5px; }
 /* Scroll arrows + clipped 3-slot window are touch-only. */
 .hb-arrow { display: none; }
-body.touch #hotbar { gap: 8px; }
-body.touch #hotbar-view { width: 128px; overflow-x: hidden; overflow-y: visible;
+body.touch #hotbar { gap: 8px; bottom: clamp(12px, 3.2vh, 16px); }
+body.touch #hotbar-view { width: clamp(104px, 34vw, 132px); overflow-x: hidden; overflow-y: visible;
   padding: 6px 0; display: flex; justify-content: flex-start; }
 body.touch #hotbar-track { transition: transform 0.16s ease; }
 body.touch .hb-arrow { display: flex; align-items: center; justify-content: center;
@@ -125,8 +125,12 @@ body.touch .hb-arrow:active { background: rgba(58,123,213,0.7); }
   border-radius: 8px; padding: 0 3px; font-size: 11px; line-height: 16px; color: #fff; background: #b23a3a; }
 #cons-food span { background: #c08a2a; }
 /* Stack the heal/food buttons in a column on the left edge, above the joystick,
-   clear of the centred hotbar so they no longer overlap it. */
-body.touch #consumables { left: 14px; right: auto; bottom: 200px; flex-direction: column; gap: 10px; }
+   clear of the centred hotbar. Position + size scale so they clear the joystick
+   on any screen. */
+body.touch #consumables { left: clamp(10px, 4vw, 16px); right: auto;
+  bottom: calc(clamp(14px, 4vh, 24px) + clamp(100px, 30vmin, 130px) + 14px);
+  flex-direction: column; gap: clamp(7px, 2vmin, 10px); }
+body.touch .cons-btn { width: var(--bs); height: var(--bs); font-size: calc(var(--bs) * 0.46); }
 
 /* Active skills bar (3 class skills). */
 #skillbar { position: fixed; bottom: 72px; left: 50%; transform: translateX(-50%);
@@ -317,14 +321,17 @@ body.touch #consumables { left: 14px; right: auto; bottom: 200px; flex-direction
 /* Movement joystick (left thumb). The base re-centres under the thumb on touch
    and returns to its home corner (faint) on release. The whole right side of
    the screen is a free drag area for looking around. */
-.stick { position: fixed; width: 130px; height: 130px; border-radius: 50%;
+/* Joystick scales with the viewport (vmin) so it fits small phones; the knob
+   travel in mobile.js is derived from the element's actual size. */
+.stick { position: fixed; width: clamp(100px, 30vmin, 130px); height: clamp(100px, 30vmin, 130px);
+  border-radius: 50%;
   background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.22);
   box-shadow: inset 0 0 24px rgba(0,0,0,0.25); z-index: 16; pointer-events: none;
   opacity: 0.5; transition: opacity 0.15s; }
 .stick.active { opacity: 1; background: rgba(255,255,255,0.1); }
-#joystick { left: 24px; bottom: 24px; }
-.stick .knob { position: absolute; top: 50%; left: 50%; width: 58px; height: 58px;
-  margin: -29px 0 0 -29px; border-radius: 50%; background: rgba(255,255,255,0.35);
+#joystick { left: clamp(12px, 4vw, 24px); bottom: clamp(14px, 4vh, 24px); }
+.stick .knob { position: absolute; top: 50%; left: 50%; width: 44%; height: 44%;
+  transform: translate(0, 0); margin: -22% 0 0 -22%; border-radius: 50%; background: rgba(255,255,255,0.35);
   border: 2px solid rgba(255,255,255,0.5); box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
 .stick.active .knob { background: rgba(255,255,255,0.55); }
 /* Sprinting: knob glows green. Cooldown after depleting stamina: ring turns red. */
@@ -345,21 +352,34 @@ body.touch #consumables { left: 14px; right: auto; bottom: 200px; flex-direction
 .tbtn.on { background: rgba(95,211,160,0.75); border-color: #7fe3a0; }
 
 /* ---- Mobile Legends-style right-thumb cluster ----
-   Big primary (attack/mine) in the very corner, build next to it, the 3 skills
-   diagonal sweep up-left of the attack button (per the player's sketch). */
+   Big primary (attack/mine) in the corner with the 3 skills on a quarter arc
+   around it. Everything is sized with viewport units (vmin) and positioned by
+   calc relative to the attack button, so on small phones the whole cluster
+   scales down together and never overlaps. */
+body.touch {
+  --edge: clamp(10px, 3.2vmin, 18px);   /* gap from the screen corner */
+  --bp: clamp(58px, 16.5vmin, 92px);    /* primary attack/mine button */
+  --bs: clamp(38px, 11vmin, 50px);      /* skills + secondary buttons */
+  --ui-gap: clamp(5px, 1.8vmin, 12px);
+  --arcR: calc(var(--bp) / 2 + var(--bs) / 2 + var(--ui-gap) + 5px); /* attack-centre → skill-centre */
+  --cR: calc(var(--edge) + var(--bp) / 2); /* attack centre, from right */
+  --cB: calc(var(--edge) + var(--bp) / 2); /* attack centre, from bottom */
+}
 body.touch #touch-buttons { position: fixed; inset: 0; transform: none; display: block; pointer-events: none; }
-body.touch .tbtn { position: fixed; pointer-events: auto; z-index: 17; }
-body.touch #btn-mine   { right: 18px;  bottom: 18px;  width: 92px; height: 92px; font-size: 34px; } /* attack/mine/build */
-body.touch #btn-view   { right: 250px; bottom: 39px;  width: 50px; height: 50px; font-size: 22px; } /* pink: left of the arc */
+body.touch .tbtn { position: fixed; pointer-events: auto; z-index: 17;
+  width: var(--bs); height: var(--bs); font-size: calc(var(--bs) * 0.46); }
+body.touch #btn-mine { right: var(--edge); bottom: var(--edge);
+  width: var(--bp); height: var(--bp); font-size: calc(var(--bp) * 0.37); }
+/* View toggle lives top-right (under the minimap), clear of the thumb cluster. */
+body.touch #btn-view { top: clamp(74px, 13vh, 96px); right: var(--edge); bottom: auto; }
 body.touch #skillbar { position: fixed; left: auto; right: 0; bottom: 0; transform: none;
   width: 0; height: 0; display: block; z-index: 17; }
-body.touch #skillbar .skill { position: absolute; width: 50px; height: 50px; }
-body.touch #skillbar .skill .sk-ico { font-size: 21px; }
-/* 3 skills evenly spaced on a 110px arc around the attack button (90°/135°/180°),
-   so each is the same distance from the attack button and from each other. */
-body.touch #skillbar .skill:nth-child(1) { right: 39px;  bottom: 149px; } /* top */
-body.touch #skillbar .skill:nth-child(2) { right: 117px; bottom: 117px; } /* diagonal */
-body.touch #skillbar .skill:nth-child(3) { right: 149px; bottom: 39px; }  /* left */
+body.touch #skillbar .skill { position: absolute; width: var(--bs); height: var(--bs); }
+body.touch #skillbar .skill .sk-ico { font-size: calc(var(--bs) * 0.42); }
+/* 3 skills on a quarter arc (top / diagonal / left) around the attack button. */
+body.touch #skillbar .skill:nth-child(1) { right: calc(var(--cR) - var(--bs) / 2); bottom: calc(var(--cB) + var(--arcR) - var(--bs) / 2); }
+body.touch #skillbar .skill:nth-child(2) { right: calc(var(--cR) + 0.71 * var(--arcR) - var(--bs) / 2); bottom: calc(var(--cB) + 0.71 * var(--arcR) - var(--bs) / 2); }
+body.touch #skillbar .skill:nth-child(3) { right: calc(var(--cR) + var(--arcR) - var(--bs) / 2); bottom: calc(var(--cB) - var(--bs) / 2); }
 
 body.touch #crosshair { font-size: 22px; }
 /* Anchor chat near the top on touch so the soft keyboard doesn't cover it.
@@ -371,4 +391,23 @@ body.touch #chat-log { bottom: auto; top: 96px; max-height: 20vh; }
   .pill { font-size: 11px; padding: 4px 8px; }
   .slot { width: 32px; height: 32px; }
   .slot img { width: 23px; height: 23px; }
+}
+
+/* Very narrow phones: tighten the top bar / vitals / minimap so they don't
+   crowd or overlap each other. */
+@media (max-width: 380px) {
+  .pill { font-size: 10px; padding: 3px 6px; }
+  body.touch #topbar { right: 150px; gap: 4px; }
+  body.touch #vitals { right: 70px; width: 92px; }
+  .slot { width: 30px; height: 30px; }
+  .slot img { width: 21px; height: 21px; }
+  body.touch #hotbar-view { width: clamp(96px, 40vw, 120px); }
+}
+
+/* Landscape / short phones: the cluster already shrinks via vmin, but keep the
+   chat and minimap from eating the limited vertical space. */
+@media (max-height: 440px) {
+  body.touch #consumables { gap: 6px; }
+  body.touch #chat-log { top: 70px; max-height: 26vh; }
+  body.touch #btn-view { top: clamp(58px, 16vh, 80px); }
 }

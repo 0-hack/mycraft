@@ -14,9 +14,11 @@ export function setupMobileControls(player, ui, actions) {
   const moveStick = document.getElementById('joystick');
   const moveKnob = moveStick.querySelector('.knob');
 
-  const MAX = 48;          // knob travel from centre, in px
-  const HALF_BASE = 65;    // half the base size (130px) for centring under thumb
   const LOOK_SENS = 0.005; // radians of turn per pixel dragged
+  // The joystick size is responsive (scaled in CSS), so derive the knob travel
+  // and centring offset from the element's actual rendered size each time.
+  const baseSize = () => moveStick.offsetWidth || 130;
+  const maxTravel = () => baseSize() * 0.37; // knob travel from centre, in px
 
   let moveId = null, lookId = null;
   let moveOrigin = { x: 0, y: 0 };
@@ -26,8 +28,9 @@ export function setupMobileControls(player, ui, actions) {
 
   // Move a joystick base so its centre is under the thumb.
   function placeBase(stick, t) {
-    stick.style.left = (t.clientX - HALF_BASE) + 'px';
-    stick.style.top = (t.clientY - HALF_BASE) + 'px';
+    const hb = stick.offsetWidth / 2;
+    stick.style.left = (t.clientX - hb) + 'px';
+    stick.style.top = (t.clientY - hb) + 'px';
     stick.style.right = 'auto';
     stick.style.bottom = 'auto';
     stick.classList.add('active');
@@ -40,6 +43,7 @@ export function setupMobileControls(player, ui, actions) {
   }
   // Update knob position; return deflection in -1..1 on each axis.
   function deflect(origin, t, knob) {
+    const MAX = maxTravel();
     let dx = t.clientX - origin.x, dy = t.clientY - origin.y;
     const d = Math.hypot(dx, dy);
     if (d > MAX) { dx = dx / d * MAX; dy = dy / d * MAX; }
