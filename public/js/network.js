@@ -73,6 +73,7 @@ export class Network {
   sendSetClass(cls) { this.send({ type: 'setClass', cls }); }
   sendAppearance(appearance) { this.send({ type: 'appearance', appearance }); }
   sendRespawn() { this.send({ type: 'respawn' }); }
+  sendSetSpawn() { this.send({ type: 'setSpawn' }); }
   sendChat(text) { this.send({ type: 'chat', text }); }
 
   // Delete the logged-in player's own account.

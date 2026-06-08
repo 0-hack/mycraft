@@ -240,6 +240,24 @@ function addArmor(g, leftLeg, rightLeg, torso, headG, eq) {
   }
 }
 
+// Feathery wings on the upper back, shown when a player has the fly permission.
+// Returns the two wing pivots so they can be flapped during flight.
+export function addWings(group, color = '#eef2f7') {
+  const back = -0.22;
+  const make = (side) => {
+    const wing = pivot(group, side * 0.12, 1.25, back);
+    // Three stacked feather panels fanning outward and back.
+    addBox(wing, 0.5, 0.34, 0.05, side * 0.28, 0.05, -0.08, color);
+    addBox(wing, 0.42, 0.26, 0.05, side * 0.5, -0.12, -0.14, color);
+    addBox(wing, 0.3, 0.18, 0.05, side * 0.64, -0.28, -0.18, '#cfd8e3');
+    wing.rotation.y = side * 0.5;
+    return wing;
+  };
+  const left = make(-1), right = make(1);
+  group.userData.wings = { left, right };
+  return group.userData.wings;
+}
+
 // Build a full character. Origin at the feet (y = 0). Exposes animatable parts
 // on group.userData.parts.
 export function buildCharacter(appearance, equipment) {

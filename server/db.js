@@ -81,11 +81,16 @@ ensureColumn('users', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('users', 'last_active', 'INTEGER');
 ensureColumn('users', 'banned', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('users', 'muted', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('users', 'can_fly', 'INTEGER NOT NULL DEFAULT 0'); // admin-granted wings
 ensureColumn('player_state', 'cash', 'INTEGER DEFAULT 0');
 ensureColumn('player_state', 'appearance', 'TEXT');
 ensureColumn('player_state', 'equipment', 'TEXT');
 ensureColumn('player_state', 'progress', 'TEXT');
 ensureColumn('player_state', 'consumables', 'TEXT');
+// Custom respawn point ("Set spawn here"). NULL = use the world default spawn.
+ensureColumn('player_state', 'spawn_x', 'REAL');
+ensureColumn('player_state', 'spawn_y', 'REAL');
+ensureColumn('player_state', 'spawn_z', 'REAL');
 
 // ---- Users ---------------------------------------------------------------
 export const userQueries = {
@@ -96,7 +101,7 @@ export const userQueries = {
   byId: db.prepare('SELECT * FROM users WHERE id = ?'),
   count: db.prepare('SELECT COUNT(*) AS n FROM users'),
   all: db.prepare(`
-    SELECT u.id, u.username, u.is_admin, u.banned, u.muted, u.created_at, u.last_active,
+    SELECT u.id, u.username, u.is_admin, u.banned, u.muted, u.can_fly, u.created_at, u.last_active,
            s.score, s.level, s.cash, s.blocks_mined
     FROM users u LEFT JOIN player_state s ON s.user_id = u.id
     ORDER BY u.last_active DESC NULLS LAST, u.created_at DESC
@@ -105,6 +110,7 @@ export const userQueries = {
   setAdmin: db.prepare('UPDATE users SET is_admin = ? WHERE id = ?'),
   setBanned: db.prepare('UPDATE users SET banned = ? WHERE id = ?'),
   setMuted: db.prepare('UPDATE users SET muted = ? WHERE id = ?'),
+  setWings: db.prepare('UPDATE users SET can_fly = ? WHERE id = ?'),
   delete: db.prepare('DELETE FROM users WHERE id = ?'),
   inactiveBefore: db.prepare('SELECT id, username FROM users WHERE COALESCE(last_active, created_at) < ? AND is_admin = 0'),
 };
@@ -115,15 +121,18 @@ export const stateQueries = {
   upsert: db.prepare(`
     INSERT INTO player_state
       (user_id, x, y, z, yaw, pitch, health, hunger, xp, level, score, cash,
-       blocks_mined, blocks_placed, inventory, achievements, appearance, equipment, progress, consumables, updated_at)
+       blocks_mined, blocks_placed, inventory, achievements, appearance, equipment, progress, consumables,
+       spawn_x, spawn_y, spawn_z, updated_at)
     VALUES
       (@user_id, @x, @y, @z, @yaw, @pitch, @health, @hunger, @xp, @level,
-       @score, @cash, @blocks_mined, @blocks_placed, @inventory, @achievements, @appearance, @equipment, @progress, @consumables, @updated_at)
+       @score, @cash, @blocks_mined, @blocks_placed, @inventory, @achievements, @appearance, @equipment, @progress, @consumables,
+       @spawn_x, @spawn_y, @spawn_z, @updated_at)
     ON CONFLICT(user_id) DO UPDATE SET
       x=@x, y=@y, z=@z, yaw=@yaw, pitch=@pitch, health=@health, hunger=@hunger,
       xp=@xp, level=@level, score=@score, cash=@cash, blocks_mined=@blocks_mined,
       blocks_placed=@blocks_placed, inventory=@inventory,
-      achievements=@achievements, appearance=@appearance, equipment=@equipment, progress=@progress, consumables=@consumables, updated_at=@updated_at
+      achievements=@achievements, appearance=@appearance, equipment=@equipment, progress=@progress, consumables=@consumables,
+      spawn_x=@spawn_x, spawn_y=@spawn_y, spawn_z=@spawn_z, updated_at=@updated_at
   `),
   delete: db.prepare('DELETE FROM player_state WHERE user_id = ?'),
   leaderboard: db.prepare(`

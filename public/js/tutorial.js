@@ -35,15 +35,19 @@ export class Tutorial {
         body: k('Tap the <b>skill buttons</b> above the hotbar to cast your 3 class skills.',
                 'Press <b>Z / X / C</b> to cast your 3 class skills.') +
               ' Learn & upgrade them in <b>Bag → Skills</b> using skill points.' },
-      { icon: '🎒', title: 'Your Bag',
-        body: 'Open it with ' + k('the <b>🎒 Bag</b> button.', '<b>B</b>.') +
-              ' Tabs: <b>Items</b> (sell materials for 💰), <b>Gear</b> (equip weapons & armour), ' +
-              '<b>Character</b> (spend attribute points), <b>Skills</b>, and <b>Craft</b> (build stronger gear with cash + materials).' },
+      { icon: '⚔️', title: 'Your weapon & axe',
+        body: 'Your class starts with the weapon that suits it (a mage gets a <b>wand</b>, an archer a <b>bow</b>, and so on). ' +
+              k('Tap <b>hotbar slot 1</b> again to swap between your weapon and your <b>🪓 axe</b>.',
+                'Press <b>1</b> (or tap slot 1) to swap between your weapon and your <b>🪓 axe</b> — handy for chopping & mining.') },
+      { icon: '🎒', title: 'Bag, Character & Settings',
+        body: k('Open your <b>🎒 Bag</b> (sell materials, equip gear, craft), your <b>⭐ Character</b> (spend attribute & skill points), and <b>⚙ Settings</b> from the top bar.',
+                'Keys: <b>B</b> = Bag (sell, gear, craft), <b>K</b> = Character (spend <b>attribute &amp; skill points</b>), <b>O</b> = Settings. You can also click the top-bar buttons.') },
       { icon: '⭐', title: 'Level up',
         body: 'Earn <b>XP</b> by mining, building and fighting. Every level grants <b>attribute points</b> (Strength, Dexterity, etc.) ' +
               'and a <b>skill point</b> — spend them in the Bag to grow your chosen class.' },
       { icon: '💀', title: 'Risk & survival',
         body: 'When you die, your <b>cash & materials drop</b> where you fell — anyone can grab them. Pick up <b>🩹 medkits</b> & <b>🍗 food</b> to recover. ' +
+              'Set a custom <b>📍 respawn point</b> from <b>⚙ Settings</b> so you come back where you choose. ' +
               'A <b>boss</b> appears now and then: <b>dodge its red slam circle!</b>' },
       { icon: '✅', title: 'You\'re ready!',
         body: 'New players get a few seconds of <b>spawn protection</b>. ' + k('Mute sound from the Bag.', 'Press <b>M</b> to mute, <b>Enter</b> to chat.') +

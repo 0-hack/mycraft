@@ -10,6 +10,7 @@ const GRAVITY = 28;
 const JUMP_SPEED = 9;
 const WALK = 5.2;
 const SPRINT = 8.0;
+const FLY_SPEED = 8.0;     // vertical climb speed while flying (wings)
 const REACH = 6;
 const SPRINT_DRAIN = 5;   // seconds of sprint to fully deplete stamina
 const SPRINT_REFILL = 7;  // seconds to fully refill
@@ -35,6 +36,8 @@ export class Player {
     this.staminaLocked = false; // forced cooldown after depletion
     this._effSprint = false;    // actually sprinting this frame
     this.fallStart = this.pos.y;
+    this.canFly = false;   // granted by the server (admin / wings permission)
+    this.flying = false;   // actively holding jump to fly this frame
     // Players spawn in the air and drop to the ground; that first landing must
     // never deal fall damage. Cleared the moment we first touch ground.
     this.spawnFalling = true;
@@ -99,12 +102,20 @@ export class Player {
     this.vel.x = move.x;
     this.vel.z = move.z;
 
-    // Gravity / buoyancy.
+    // Gravity / buoyancy / flight.
     if (this.inWater) {
       this.vel.y += -GRAVITY * 0.25 * dt;
       this.vel.y = Math.max(this.vel.y, -3);
       if (this.input.jump) this.vel.y = 4; // swim up
+      this.flying = false;
+    } else if (this.canFly) {
+      // Creative-style wings: hold jump to climb, otherwise drift down gently
+      // and hover. No gravity slam, so flight feels smooth.
+      this.flying = true;
+      if (this.input.jump) this.vel.y = FLY_SPEED;
+      else this.vel.y = Math.max(this.vel.y - GRAVITY * 0.25 * dt, -FLY_SPEED * 0.5);
     } else {
+      this.flying = false;
       this.vel.y -= GRAVITY * dt;
       if (this.input.jump && this.onGround) {
         this.vel.y = JUMP_SPEED;
@@ -127,7 +138,7 @@ export class Player {
       if (this.vel.y < 0) {
         this.onGround = true;
         if (this.spawnFalling) { this.spawnFalling = false; this.fallStart = this.pos.y; }
-        else this.handleFallDamage(prevY);
+        else if (!this.canFly) this.handleFallDamage(prevY); // wings ignore fall damage
       }
       np.y = this.pos.y;
       this.vel.y = 0;
@@ -143,9 +154,16 @@ export class Player {
 
     this.survivalTick(dt);
 
-    // Sync camera.
+    this.syncCamera();
+  }
+
+  // Place the camera at the player's eye looking along yaw/pitch. In third
+  // person the render code pulls the camera back AFTER this; combat code calls
+  // syncCamera() again first so raycasts always originate from the real eye.
+  syncCamera() {
     this.camera.position.set(this.pos.x, this.pos.y + EYE, this.pos.z);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+    this.camera.updateMatrixWorld();
   }
 
   handleFallDamage(prevY) {

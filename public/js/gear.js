@@ -27,6 +27,16 @@ export function defaultEquipment() {
   return { weapon: 'sword', weapons: { sword: 1 }, helmet: 0, chest: 0, legs: 0, boots: 0 };
 }
 
+// Starting loadout for a chosen class: everyone owns a basic sword + an axe
+// (the quick-swap weapon on hotbar slot 1), plus their class's favored weapon,
+// which is the one equipped by default (mage→staff, archer→bow, etc.).
+export function classEquipment(favored) {
+  const weapons = { sword: 1, axe: 1 };
+  if (favored && WEAPONS[favored] && WEAPONS[favored].craftable) weapons[favored] = 1;
+  const weapon = favored && weapons[favored] ? favored : 'sword';
+  return { weapon, weapons, helmet: 0, chest: 0, legs: 0, boots: 0 };
+}
+
 export function normalizeEquipment(e) {
   e = e || {};
   const lv = (v) => Math.max(0, Math.min(MAX_LEVEL, Math.floor(Number(v) || 0)));
@@ -37,6 +47,7 @@ export function normalizeEquipment(e) {
     }
   }
   if (!weapons.sword) weapons.sword = 1; // everyone keeps a basic sword
+  if (!weapons.axe) weapons.axe = 1;     // …and a basic axe (the slot-1 quick-swap)
   let weapon = WEAPONS[e.weapon] ? e.weapon : 'sword';
   if (weapon !== 'fist' && !weapons[weapon]) weapon = 'sword';
   return { weapon, weapons, helmet: lv(e.helmet), chest: lv(e.chest), legs: lv(e.legs), boots: lv(e.boots) };

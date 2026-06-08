@@ -77,6 +77,7 @@ app.get('/api/admin/overview', requireAdmin, (_req, res) => {
 app.post('/api/admin/settings', requireAdmin, (req, res) => {
   const settings = updateSettings(req.body && req.body.settings);
   game.broadcastTuning(); // push client-side tunables live
+  game.refreshFly();      // wingsForAll may have changed — update fly permission
   res.json({ ok: true, settings });
 });
 
@@ -104,6 +105,8 @@ app.post('/api/admin/user', requireAdmin, (req, res) => {
     case 'unban': game.setBanned(userId, false); break;
     case 'mute': game.setMuted(userId, true); break;
     case 'unmute': game.setMuted(userId, false); break;
+    case 'wings': game.setWings(userId, true); break;
+    case 'unwings': game.setWings(userId, false); break;
     case 'promote': userQueries.setAdmin.run(1, userId); break;
     case 'demote':
       if (userId === req.admin.id) return res.status(400).json({ error: 'You cannot demote yourself.' });

@@ -75,3 +75,77 @@ const SFX = {
 };
 
 export function play(name) { const f = SFX[name]; if (f) f(); }
+
+// ---------------------------------------------------------------- background music
+// A gentle, procedural ambient loop (no asset files). A slow chord pad plus a
+// sparse arpeggio melody, scheduled a beat ahead so it stays glitch-free.
+let musicOn = localStorage.getItem('vc_music') !== '0';
+let musicGain = null;       // dedicated bus so music volume is independent of SFX
+let musicTimer = null;
+let musicStep = 0;
+const BEAT = 0.5;           // seconds per step (~120 BPM feel, halved)
+// A wistful i–VI–III–VII progression in A minor (root notes, Hz).
+const CHORDS = [
+  [220.00, 261.63, 329.63], // Am
+  [174.61, 220.00, 261.63], // F
+  [261.63, 329.63, 392.00], // C
+  [196.00, 246.94, 293.66], // G
+];
+const MELODY = [440.00, 523.25, 659.25, 587.33, 523.25, 440.00, 392.00, 493.88];
+
+export function musicEnabled() { return musicOn; }
+
+function musicTick() {
+  if (!musicOn || !ctx) return;
+  const t = ctx.currentTime + 0.05;
+  const bar = (musicStep >> 3) % CHORDS.length;   // change chord every 8 steps
+  const chord = CHORDS[bar];
+  // Soft pad: hold the chord across the start of each bar.
+  if (musicStep % 8 === 0) {
+    for (const f of chord) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'triangle'; o.frequency.setValueAtTime(f, t);
+      const dur = BEAT * 8;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.05, t + 0.6);
+      g.gain.linearRampToValueAtTime(0.04, t + dur - 0.8);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(musicGain);
+      o.start(t); o.stop(t + dur + 0.05);
+    }
+  }
+  // Sparse arpeggio melody, every other step.
+  if (musicStep % 2 === 0) {
+    const f = MELODY[(musicStep >> 1) % MELODY.length];
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(f, t);
+    const dur = BEAT * 1.4;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.045, t + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(musicGain);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+  musicStep = (musicStep + 1) % (8 * CHORDS.length);
+}
+
+export function startMusic() {
+  if (!musicOn) return;
+  ensure();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume();
+  if (!musicGain) { musicGain = ctx.createGain(); musicGain.gain.value = 0.6; musicGain.connect(master); }
+  if (musicTimer) return; // already running
+  musicStep = 0;
+  musicTick();
+  musicTimer = setInterval(musicTick, BEAT * 1000);
+}
+export function stopMusic() {
+  if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+}
+export function setMusicEnabled(v) {
+  musicOn = !!v;
+  localStorage.setItem('vc_music', musicOn ? '1' : '0');
+  if (musicOn) startMusic(); else stopMusic();
+}
+export function toggleMusic() { setMusicEnabled(!musicOn); return musicOn; }

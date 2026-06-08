@@ -19,6 +19,7 @@ const DEFAULTS = {
   mobIntervalMs: 9000,           // how often a monster spawns
   mobPower: 1,                   // scales monster health & damage
   chatMinIntervalMs: 1200,       // min gap between chat messages (anti-spam)
+  wingsForAll: 0,                // 1 = every player can fly (wings); admins always can
   // Player / combat tuning (balanced defaults).
   spawnProtectSec: 5,            // invulnerable to fall + attacks on each spawn
   hungerDrainMult: 0.6,          // <1 = hunger drains slower
@@ -40,7 +41,7 @@ const PRESETS = {
 const NUMERIC = new Set([
   'pickupCap', 'pickupIntervalMs', 'medkitEnabled', 'foodEnabled',
   'sellMultiplier', 'dropLifetimeMs', 'inactiveDays',
-  'mobEnabled', 'mobCap', 'mobPerPlayer', 'mobIntervalMs', 'mobPower', 'chatMinIntervalMs',
+  'mobEnabled', 'mobCap', 'mobPerPlayer', 'mobIntervalMs', 'mobPower', 'chatMinIntervalMs', 'wingsForAll',
   'spawnProtectSec', 'hungerDrainMult', 'staminaDrainSec', 'staminaRefillSec',
   'moveSpeedMult', 'skillDmgMult', 'skillRangeMult', 'skillCdMult',
 ]);

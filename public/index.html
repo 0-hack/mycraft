@@ -37,6 +37,7 @@
   <div id="hud" class="hidden">
     <div id="hurt-flash"></div>
     <div id="crosshair">＋</div>
+    <div id="fly-indicator" class="hidden">🪽 Jump to fly</div>
     <div id="target-bracket" class="hidden"><i></i><i></i><i></i><i></i></div>
     <div id="mine-bar"><div></div></div>
     <div id="floats"></div>
@@ -48,12 +49,12 @@
     <canvas id="minimap" width="150" height="150"></canvas>
 
     <div id="topbar">
-      <button id="btn-name" class="pill btn">👤 <b id="whoami">—</b> ⚙</button>
+      <button id="btn-name" class="pill btn" title="Settings (O)">👤 <b id="whoami">—</b> ⚙</button>
       <span class="pill">🌐 <b id="online">1</b></span>
       <span class="pill">💰 <b id="cash">0</b></span>
-      <button id="btn-char" class="pill btn">⭐ Lv <b id="level">1</b> · <span id="xp-pct">0%</span></button>
-      <button id="btn-bag" class="pill btn">🎒 Bag</button>
-      <button id="btn-view2" class="pill btn">👁 View</button>
+      <button id="btn-char" class="pill btn" title="Character: skills &amp; attributes (K)">⭐ Lv <b id="level">1</b> · <span id="xp-pct">0%</span></button>
+      <button id="btn-bag" class="pill btn" title="Bag (B)">🎒 Bag</button>
+      <button id="btn-view2" class="pill btn" title="Toggle view (V)">👁 View</button>
       <button id="btn-chat" class="pill btn">💬</button>
       <button id="btn-leaderboard" class="pill btn">🏆</button>
       <span id="score" class="hidden">0</span><span id="mined" class="hidden">0</span>
@@ -81,7 +82,8 @@
     <div id="death" class="hidden">
       <div class="death-card">
         <h2>💀 You died</h2>
-        <p>Your progress is saved. Jump back in!</p>
+        <p>Your progress is saved. You'll respawn at your saved spawn point
+          (set one via ⚙ Settings → 📍 Set spawn point), or the city centre.</p>
         <button id="btn-respawn">Respawn</button>
       </div>
     </div>
@@ -156,14 +158,23 @@
         <h2>⚙ Settings</h2>
         <button class="panel-exit" data-close="settings">✕</button>
       </div>
+      <div class="set-row">
+        <label for="set-sensitivity">🖱 Mouse sensitivity <b id="set-sensitivity-val">×1.0</b></label>
+        <input id="set-sensitivity" type="range" min="1" max="20" step="1" value="5" />
+      </div>
       <div class="set-actions">
+        <button id="btn-setspawn" class="secondary">📍 Set spawn point here</button>
         <button id="btn-help" class="secondary">❔ How to play</button>
         <button id="btn-customize" class="secondary">🧑‍🎨 Customise character</button>
         <button id="btn-sound" class="secondary">🔊 Sound</button>
+        <button id="btn-music" class="secondary">🎵 Music</button>
         <a id="admin-link" class="hidden" href="/admin.html" target="_blank">🛠 Admin panel</a>
         <button id="btn-logout" class="secondary">Log out</button>
         <button id="btn-delete-account" class="danger">Delete account</button>
       </div>
+      <p class="hint">⌨ Desktop keys: <b>B</b> Bag · <b>K</b> Character (skills &amp; attributes) ·
+        <b>O</b> Settings · <b>V</b> View · <b>1</b> swap weapon/axe · <b>Z X C</b> skills ·
+        <b>Q</b> medkit · <b>F</b> food · <b>M</b> mute.</p>
     </div>
   </div>
 

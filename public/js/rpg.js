@@ -21,7 +21,7 @@ export const CLASSES = {
   soldier: { name: 'Soldier', icon: '🛡️',
     desc: 'Tough melee bruiser — strong & hardy, poor at range and magic.',
     base: { str: 5, dex: 1, int: 0, end: 4, vit: 4, spd: 2 },
-    mult: { melee: 1.25, ranged: 0.8, magic: 0.5 } },
+    mult: { melee: 1.25, ranged: 0.8, magic: 0.5 }, favored: 'sword' },
   archer: { name: 'Archer', icon: '🏹',
     desc: 'Deadly with a bow at range; fragile in a brawl.',
     base: { str: 2, dex: 6, int: 1, end: 1, vit: 2, spd: 4 },
@@ -37,7 +37,7 @@ export const CLASSES = {
   artisan: { name: 'Artisan', icon: '🛠️',
     desc: 'Master crafter — cheaper, well-rounded gear offsets modest stats.',
     base: { str: 3, dex: 2, int: 3, end: 2, vit: 3, spd: 2 },
-    mult: { melee: 1.0, ranged: 1.0, magic: 0.8 }, craftDiscount: 0.4 },
+    mult: { melee: 1.0, ranged: 1.0, magic: 0.8 }, craftDiscount: 0.4, favored: 'axe' },
 };
 
 // ---- Class skills (3 per class, levels 0..5) -----------------------------

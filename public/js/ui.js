@@ -72,12 +72,13 @@ export class UI {
     track.id = 'hotbar-track';
     this._hotTrack = track;
 
-    // Slot 0 = no block selected → the action button mines/removes blocks.
+    // Slot 0 = weapon/mine slot: holds your equipped weapon (used to attack &
+    // mine). Tapping it again swaps the weapon with your axe.
     const mine = document.createElement('div');
     mine.className = 'slot mine-slot';
-    mine.title = 'No block — break/remove blocks';
-    mine.innerHTML = '<span class="ico">⛏</span><span class="num">1</span>';
-    mine.onclick = () => this.selectSlot(0);
+    mine.title = 'Equipped weapon — attack & mine. Press 1 again to swap ⇄ 🪓 Axe';
+    mine.innerHTML = '<span class="ico" id="held-weapon-ico">⚔️</span><span class="num">1</span>';
+    mine.onclick = () => { if (this.selected === 0) this.switchWeapon(); else this.selectSlot(0); };
     track.appendChild(mine);
     HOTBAR.forEach((type, i) => {
       const slot = document.createElement('div');
@@ -125,8 +126,17 @@ export class UI {
   }
 
   cycleSlot(dir) { this.selectSlot(this.selected + dir); }
-  // null = empty slot (mine mode); otherwise the block to place (build mode).
+  // null = weapon/mine slot (attack & mine); otherwise the block to place.
   selectedBlock() { return this.selected === 0 ? null : HOTBAR[this.selected - 1]; }
+
+  // The weapon/mine slot reflects the equipped weapon's icon. Tapping it again
+  // (or pressing 1 when it's already active) asks the game to swap to the axe.
+  bindWeaponSwitch(fn) { this._onWeaponSwitch = fn; }
+  switchWeapon() { if (this._onWeaponSwitch) this._onWeaponSwitch(); }
+  setHeldWeapon(type) {
+    const ico = this.el('held-weapon-ico');
+    if (ico) ico.textContent = (WEAPONS[type] || WEAPONS.fist).icon || '⚔️';
+  }
 
   // ---- Vitals (health + food bars) ----
   updateVitals(player) {

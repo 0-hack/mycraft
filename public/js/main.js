@@ -8,12 +8,12 @@ import { UI } from './ui.js';
 import { B, isSolid } from './blocks.js';
 import { isTouchDevice, setupMobileControls } from './mobile.js';
 import { Minimap } from './minimap.js';
-import { buildCharacter, animateCharacter } from './character.js';
+import { buildCharacter, animateCharacter, addWings } from './character.js';
 import { CharacterEditor } from './chareditor.js';
 import { Tutorial, tutorialSeen } from './tutorial.js';
 import { addAccent } from './detail.js';
 import { equippedWeapon, speedMultiplier, bodyArmorWeight, defaultEquipment } from './gear.js';
-import { speedAttrMult, hungerMult, maxHealth, miningMult, defaultProgress, classSkills } from './rpg.js';
+import { speedAttrMult, hungerMult, maxHealth, miningMult, defaultProgress, classSkills, CLASSES } from './rpg.js';
 import { blockHardness } from './blocks.js';
 import { MOB_TYPES } from './mobs.js';
 import * as audio from './audio.js';
@@ -35,9 +35,10 @@ function applyTuning(t) {
   recomputeDerived();
 }
 
-// Unlock audio on the first user gesture (browser autoplay policy).
+// Unlock audio on the first user gesture (browser autoplay policy), then kick
+// off the ambient background music (no-op if the player muted music).
 for (const ev of ['pointerdown', 'keydown', 'touchstart']) {
-  addEventListener(ev, () => audio.resume(), { once: true });
+  addEventListener(ev, () => { audio.resume(); audio.startMusic(); }, { once: true });
 }
 let world, player, renderer, scene, camera, highlight;
 let selfId = null, username = null;
@@ -47,6 +48,18 @@ let lastMoveSent = 0, lastStatsSent = 0, lastMovePos = null;
 let onlineCount = 1;
 let swam = false;
 const SPAWN = { x: 8, y: 40, z: 8 };
+
+// Mouse look sensitivity (radians per pixel of mouse movement). Lowered from the
+// old 0.0025 default, which felt twitchy on desktop. Adjustable in Settings.
+const DEFAULT_SENSITIVITY = 0.0013;
+let lookSensitivity = (() => {
+  const v = parseFloat(localStorage.getItem('vc_sensitivity'));
+  return Number.isFinite(v) && v > 0 ? v : DEFAULT_SENSITIVITY;
+})();
+function setSensitivity(v) {
+  lookSensitivity = Math.max(0.0003, Math.min(0.006, v));
+  localStorage.setItem('vc_sensitivity', String(lookSensitivity));
+}
 
 // ---------------------------------------------------------------- auth flow
 ui.bindAuth({
@@ -131,6 +144,7 @@ function setupNetwork() {
     player.hunger = msg.state?.hunger ?? 20;
     // Report environmental damage to the server (it owns health).
     player.onDamage = (amount, cause) => net.sendDamage(amount, cause);
+    setCanFly(!!msg.canFly);
 
     ui.hideAuthAndPlay(username);
     ui.primeAchievements(msg.state?.achievements);
@@ -141,6 +155,7 @@ function setupNetwork() {
     if (msg.state?.equipment) applyEquipment(msg.state.equipment);
     if (msg.state?.progress) applyProgress(msg.state.progress);
     currentStats = { ...defaultStats(), ...(msg.state || {}) };
+    spawnPointSet = !!msg.state?.spawnSet;
     ui.updateStats(currentStats);
 
     for (const p of msg.players) addRemote(p);
@@ -193,7 +208,16 @@ function setupNetwork() {
     }
   });
   net.on('tuning', (msg) => applyTuning(msg.tuning));
-  net.on('crafted', () => { ui.toast('🛠 Crafted!'); audio.play('craft'); });
+  net.on('canFly', (msg) => setCanFly(!!msg.value));
+  net.on('spawnSet', (msg) => {
+    ui.toast(`📍 Respawn point set here (${msg.x}, ${msg.y}, ${msg.z}).`);
+    spawnPointSet = true;
+    refreshSpawnBtn();
+  });
+  net.on('crafted', (msg) => {
+    if (msg && msg.action === 'equip') { audio.play('place'); return; } // quiet weapon swap
+    ui.toast('🛠 Crafted!'); audio.play('craft');
+  });
   net.on('craftFail', () => ui.toast('Not enough cash or materials.'));
   net.on('levelup', (msg) => { ui.toast(`⭐ Level ${msg.level}!\n+2 attribute & +1 skill point — open 🎒 Bag`); audio.play('level'); });
   net.on('skillFx', (msg) => {
@@ -301,7 +325,20 @@ function defaultStats() {
 // stats (speed, max health, hunger) and the bag UI.
 let myBuffSpeed = 1;
 let _buffTimer = null;
-function applyEquipment(eq) { myEquipment = eq; ui.setEquipment(eq); recomputeDerived(); buildViewModel(); }
+function applyEquipment(eq) { myEquipment = eq; ui.setEquipment(eq); ui.setHeldWeapon(eq.weapon); recomputeDerived(); buildViewModel(); }
+
+// Quick-swap the held weapon between the class's favored weapon and the axe
+// (the slot-1 default). Falls back to a sword if the favored weapon isn't owned.
+function switchWeapon() {
+  if (!myEquipment) return;
+  const fav = (CLASSES[myProgress.class] && CLASSES[myProgress.class].favored) || 'sword';
+  const owned = myEquipment.weapons || {};
+  const primary = owned[fav] ? fav : 'sword';
+  const target = myEquipment.weapon === 'axe' ? primary : 'axe';
+  if (!owned[target]) { ui.toast('🪓 You don\'t have that weapon yet — craft it in the Bag.'); return; }
+  if (target === myEquipment.weapon) return;
+  net.sendCraft({ kind: 'weapon', item: target, action: 'equip' });
+}
 function applyProgress(p) { myProgress = p; ui.setProgress(p); recomputeDerived(); buildSkillBar(); }
 
 function recomputeDerived() {
@@ -339,6 +376,7 @@ function buildSkillBar() {
 
 function useSkillSlot(slot) {
   if (!player || player.dead) return;
+  player.syncCamera(); // aim skills from the eye, not the 3rd-person camera
   const sk = classSkills(myProgress.class)[slot];
   if (!sk) return;
   const lvl = (myProgress.skills && myProgress.skills[sk.id]) || 0;
@@ -417,6 +455,7 @@ function rebuildOwnAvatar() {
   if (!scene) return;
   if (ownAvatar) scene.remove(ownAvatar);
   ownAvatar = buildCharacter(myAppearance, myEquipment);
+  if (canFly) addWings(ownAvatar);
   scene.add(ownAvatar);
 }
 
@@ -465,6 +504,13 @@ function updateThirdPerson(dt) {
   const moving = player.input.forward !== 0 || player.input.strafe !== 0;
   ownPhase += dt * (moving ? 9 : 0);
   animateCharacter(ownAvatar.userData.parts, { phase: ownPhase, moving, swing: ownSwing, pitch: player.pitch });
+  // Flap the wings while flying; rest them otherwise.
+  const wings = ownAvatar.userData.wings;
+  if (wings) {
+    const flap = player.flying ? Math.sin(performance.now() / 1000 * 14) * 0.6 + 0.2 : 0;
+    wings.left.rotation.z = flap;
+    wings.right.rotation.z = -flap;
+  }
   // Move the camera back along its view axis (local +z is backwards).
   _back.set(0, 0, 1).applyQuaternion(camera.quaternion);
   camera.position.addScaledVector(_back, 4.2);
@@ -500,6 +546,37 @@ function toggleSound() {
   const on = audio.toggle();
   refreshSoundBtn();
   ui.toast(on ? '🔊 Sound on' : '🔇 Sound off');
+}
+
+function refreshMusicBtn() {
+  const b = document.getElementById('btn-music');
+  if (b) b.textContent = audio.musicEnabled() ? '🎵 Music: on' : '🎵 Music: off';
+}
+function toggleMusic() {
+  const on = audio.toggleMusic();
+  refreshMusicBtn();
+  ui.toast(on ? '🎵 Music on' : '🎵 Music off');
+}
+
+// ---- wings / flight ----
+let canFly = false;
+function setCanFly(v) {
+  const was = canFly;
+  canFly = !!v;
+  if (player) player.canFly = canFly;
+  const ind = document.getElementById('fly-indicator');
+  if (ind) ind.classList.toggle('hidden', !canFly);
+  if (thirdPerson) rebuildOwnAvatar(); // show/hide the wings on the avatar
+  if (canFly && !was) ui.toast(isTouchDevice()
+    ? '🪽 Wings granted! Hold the jump button to fly.'
+    : '🪽 Wings granted! Hold Space to fly.');
+}
+
+// ---- custom respawn point ----
+let spawnPointSet = false;
+function refreshSpawnBtn() {
+  const b = document.getElementById('btn-setspawn');
+  if (b) b.textContent = spawnPointSet ? '📍 Update spawn point here' : '📍 Set spawn point here';
 }
 
 function saveAppearance(appearance, cls) {
@@ -573,13 +650,36 @@ function setupInput() {
   setupHotbarKeys();
 
   document.getElementById('btn-sound').onclick = () => toggleSound();
+  document.getElementById('btn-music')?.addEventListener('click', () => toggleMusic());
   document.getElementById('btn-view2').onclick = () => toggleView();
   document.getElementById('btn-help').onclick = () => { ui.closeAll(); tutorial.open(); };
+  document.getElementById('btn-setspawn')?.addEventListener('click', () => net.sendSetSpawn());
+  setupSensitivitySlider();
   refreshSoundBtn();
+  refreshMusicBtn();
+  refreshSpawnBtn();
   document.getElementById('btn-respawn').onclick = () => net.sendRespawn();
   document.getElementById('btn-leaderboard').onclick = () =>
     ui.toggleLeaderboard(() => net.leaderboard());
   setupChat();
+}
+
+function setupSensitivitySlider() {
+  const slider = document.getElementById('set-sensitivity');
+  const label = document.getElementById('set-sensitivity-val');
+  if (!slider) return;
+  // The slider is a friendly 1–10 scale mapped onto the radian-per-pixel range.
+  const toSlider = (s) => Math.round((s / 0.0013) * 5);
+  slider.value = String(Math.max(1, Math.min(20, toSlider(lookSensitivity))));
+  const show = () => { if (label) label.textContent = '×' + (slider.value / 5).toFixed(1); };
+  show();
+  slider.addEventListener('input', () => { setSensitivity((slider.value / 5) * 0.0013); show(); });
+}
+
+// Toggle a HUD panel open/closed (used by the desktop K / O shortcuts).
+function togglePanel(id) {
+  if (ui.isOpen(id)) ui.closePanel(id);
+  else ui.openPanel(id);
 }
 
 const keys = {};
@@ -600,7 +700,7 @@ function setupDesktopControls() {
 
   addEventListener('mousemove', (e) => {
     if (document.pointerLockElement === canvas) {
-      player.look(e.movementX * 0.0025, e.movementY * 0.0025);
+      player.look(e.movementX * lookSensitivity, e.movementY * lookSensitivity);
     }
   });
 
@@ -617,6 +717,8 @@ function setupDesktopControls() {
 
   addEventListener('keydown', (e) => {
     if ((e.code === 'KeyB' || e.code === 'KeyI') && !chatOpen) { ui.toggleBag(); return; }
+    if (e.code === 'KeyK' && !chatOpen) { togglePanel('charsheet'); return; } // attributes + skills
+    if (e.code === 'KeyO' && !chatOpen) { togglePanel('settings'); return; }  // settings
     if (e.code === 'Escape' && ui.anyMenuOpen()) { ui.closeAll(); return; }
     if (e.code === 'KeyV' && !chatOpen && !ui.anyMenuOpen()) { toggleView(); return; }
     if (e.code === 'KeyM' && !chatOpen) { toggleSound(); return; }
@@ -654,11 +756,15 @@ function updateKeyInput(keys) {
 }
 
 function setupHotbarKeys() {
+  ui.bindWeaponSwitch(switchWeapon);
   addEventListener('keydown', (e) => {
-    if (chatOpen) return;
+    if (chatOpen || ui.anyMenuOpen()) return;
     if (e.code.startsWith('Digit')) {
       const n = parseInt(e.code.slice(5), 10);
-      if (n >= 1 && n <= 9) ui.selectSlot(n - 1);
+      if (n < 1 || n > 9) return;
+      // Pressing 1 while the weapon slot is already active swaps weapon ⇄ axe.
+      if (n === 1 && ui.selected === 0) switchWeapon();
+      else ui.selectSlot(n - 1);
     }
   });
 }
@@ -702,6 +808,10 @@ let ownSwing = 0;
 // attack); otherwise mine the block. Used by both the action and the bracket.
 function computeAim(w) {
   if (!player) return null;
+  // In third person the camera is pulled back behind the avatar for rendering;
+  // snap it back to the eye so attack/mine rays come from the player, not the
+  // displaced camera (otherwise targets read as out of reach).
+  player.syncCamera();
   const target = findTarget(w);
   const r = player.raycast();
   let blockDist = Infinity, blockPoint = null;
@@ -913,10 +1023,13 @@ function updatePickups(t) {
   for (const [id, e] of pickups) {
     e.mesh.position.y = e.baseY + Math.sin(t * 3 + e.phase) * 0.18;
     if (player && !player.dead && !requestedPickups.has(id)) {
+      // Cylindrical proximity: a generous horizontal radius plus a tall vertical
+      // tolerance so jumping over (or standing under) a floating pickup still
+      // grabs it. The server allows up to 2.5 units, so stay within that.
       const dx = e.x - player.pos.x;
-      const dy = e.y - (player.pos.y + 0.9);
       const dz = e.z - player.pos.z;
-      if (dx * dx + dy * dy + dz * dz < 1.8 * 1.8) {
+      const dy = e.y - player.pos.y; // pickup ground level vs. feet
+      if (dx * dx + dz * dz < 1.7 * 1.7 && dy > -1.5 && dy < 2.4) {
         requestedPickups.add(id);
         net.sendPickup(id);
       }

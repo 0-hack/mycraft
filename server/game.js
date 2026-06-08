@@ -10,7 +10,7 @@ import { getSettings, clientTuning } from './settings.js';
 import { getAllEdits, setBlock } from './world.js';
 import {
   weaponStats, equippedWeapon, defenseOf, mitigate, upgradeCost,
-  normalizeEquipment, defaultEquipment, WEAPONS, ARMOR, MAX_LEVEL,
+  normalizeEquipment, defaultEquipment, classEquipment, WEAPONS, ARMOR, MAX_LEVEL,
 } from '../public/js/gear.js';
 import {
   defaultProgress, normalizeProgress, addXp, maxHealth, damageMult,
@@ -50,8 +50,17 @@ function defaultState(userId) {
     equipment: JSON.stringify(defaultEquipment()),
     progress: JSON.stringify(defaultProgress('soldier')),
     consumables: JSON.stringify({}),
+    spawn_x: null, spawn_y: null, spawn_z: null, // null = use default world spawn
     updated_at: Date.now(),
   };
+}
+
+// Resolve a player's respawn point: their saved custom spawn, or the city centre.
+function respawnPoint(s) {
+  if (Number.isFinite(s.spawn_x) && Number.isFinite(s.spawn_y) && Number.isFinite(s.spawn_z)) {
+    return { x: s.spawn_x, y: s.spawn_y, z: s.spawn_z };
+  }
+  return { x: SPAWN.x, y: SPAWN.y, z: SPAWN.z };
 }
 
 // Live max health from the player's vitality.
@@ -64,6 +73,7 @@ function loadState(userId) {
   s.equipment = JSON.stringify(normalizeEquipment(safeParse(s.equipment, null)));
   s.progress = JSON.stringify(normalizeProgress(safeParse(s.progress, null)));
   s.consumables = JSON.stringify(safeParse(s.consumables, {}));
+  if (s.spawn_x === undefined) { s.spawn_x = null; s.spawn_y = null; s.spawn_z = null; }
   if (s.health <= 0) s.health = getMaxHp(s); // never join already dead
   return s;
 }
@@ -122,6 +132,23 @@ export function attachGame(server) {
     }
   }
 
+  // Whether a connected player may fly: admins always; everyone if wingsForAll;
+  // otherwise only those individually granted wings by an admin.
+  function computeCanFly(ctx) {
+    if (getSettings().wingsForAll) return true;
+    const u = userQueries.byId.get(ctx.user.id);
+    return !!(u && (u.is_admin || u.can_fly));
+  }
+  // Recompute everyone's fly permission and push any changes (after a settings
+  // or per-user grant change).
+  function refreshFly() {
+    for (const ctx of clients.values()) {
+      const v = computeCanFly(ctx);
+      ctx.canFly = v;
+      send(ctx.ws, { type: 'canFly', value: v });
+    }
+  }
+
   function roster() {
     return [...clients.values()].map((c) => ({
       id: c.netId, name: c.user.username,
@@ -167,6 +194,7 @@ export function attachGame(server) {
           muted: !!urow.muted, skillCd: {}, buffs: {}, effects: {}, lastChat: 0,
           invulnUntil: Date.now() + getSettings().spawnProtectSec * 1000, // spawn protection
         };
+        ctx.canFly = computeCanFly(ctx);
         clients.set(ws, ctx);
 
         send(ws, {
@@ -181,6 +209,7 @@ export function attachGame(server) {
           prices: CONFIG.MATERIAL_PRICES,
           difficulty: getSettings().difficulty,
           tuning: clientTuning(),
+          canFly: ctx.canFly,
           edits: getAllEdits(),
           players: roster().filter((p) => p.id !== ctx.netId),
           pickups: [...pickups.values()],
@@ -282,8 +311,13 @@ export function attachGame(server) {
           if (!(p.level === 1 && p.points === 0 && p.xp === 0)) break;
           ctx.state.progress = JSON.stringify(defaultProgress(cls));
           ctx.state.health = maxHealth(safeParse(ctx.state.progress, null));
+          // Hand out the class-appropriate loadout: favored weapon equipped,
+          // plus a sword and an axe (the slot-1 quick-swap).
+          const eq = normalizeEquipment(classEquipment(CLASSES[cls].favored));
+          ctx.state.equipment = JSON.stringify(eq);
           pushHealth(ctx);
           send(ws, { type: 'stats', state: publicState(ctx.state) });
+          broadcast({ type: 'playerEquipment', id: ctx.netId, equipment: eq }, ws);
           break;
         }
         case 'pickup': {
@@ -334,12 +368,23 @@ export function attachGame(server) {
         }
         case 'respawn': {
           const s = ctx.state;
-          s.x = SPAWN.x; s.y = SPAWN.y; s.z = SPAWN.z;
+          const sp = respawnPoint(s); // saved "Set spawn here" point, or city centre
+          s.x = sp.x; s.y = sp.y; s.z = sp.z;
           s.health = getMaxHp(s); s.hunger = 20;
           ctx.dead = false;
           ctx.invulnUntil = Date.now() + getSettings().spawnProtectSec * 1000; // protection on respawn
           send(ws, { type: 'respawn', x: s.x, y: s.y, z: s.z });
           send(ws, { type: 'stats', state: publicState(s) });
+          break;
+        }
+        case 'setSpawn': {
+          // Remember the player's current position as their respawn point.
+          if (ctx.dead) break;
+          const s = ctx.state;
+          if (![s.x, s.y, s.z].every(Number.isFinite)) break;
+          s.spawn_x = s.x; s.spawn_y = s.y; s.spawn_z = s.z;
+          saveState(s);
+          send(ws, { type: 'spawnSet', x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) });
           break;
         }
         case 'chat': {
@@ -964,6 +1009,12 @@ export function attachGame(server) {
     },
     recentChat() { return chatLog.slice(-120); },
     broadcastTuning() { broadcast({ type: 'tuning', tuning: clientTuning() }); },
+    refreshFly() { refreshFly(); },
+    setWings(userId, on) {
+      userQueries.setWings.run(on ? 1 : 0, userId);
+      const c = findByUserId(userId);
+      if (c) { c.canFly = computeCanFly(c); send(c.ws, { type: 'canFly', value: c.canFly }); }
+    },
     setBanned(userId, banned) {
       userQueries.setBanned.run(banned ? 1 : 0, userId);
       if (banned) { const c = findByUserId(userId); if (c) { c.skipSave = true; send(c.ws, { type: 'authError' }); c.ws.close(); clients.delete(c.ws); } }
@@ -992,6 +1043,7 @@ function publicState(s) {
     progress: prog,
     maxHealth: maxHealth(prog),
     consumables: safeParse(s.consumables, {}),
+    spawnSet: Number.isFinite(s.spawn_x),
   };
 }
 

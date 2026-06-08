@@ -63,6 +63,7 @@ function fillSettings(s) {
   $('s-medkit').checked = !!s.medkitEnabled;
   $('s-food').checked = !!s.foodEnabled;
   $('s-mob').checked = !!s.mobEnabled;
+  $('s-wingsForAll').checked = !!s.wingsForAll;
   // Player / combat tuning
   $('s-spawnProtect').value = s.spawnProtectSec;
   $('s-hungerDrain').value = s.hungerDrainMult;
@@ -89,6 +90,7 @@ $('s-save').onclick = async () => {
     medkitEnabled: $('s-medkit').checked ? 1 : 0,
     foodEnabled: $('s-food').checked ? 1 : 0,
     mobEnabled: $('s-mob').checked ? 1 : 0,
+    wingsForAll: $('s-wingsForAll').checked ? 1 : 0,
   };
   const res = await api('/api/admin/settings', { method: 'POST', body: JSON.stringify({ settings }) });
   if (res.settings) { fillSettings(res.settings); msg('settings-msg', 'Saved ✓', true); }
@@ -175,11 +177,15 @@ function render(data) {
     const mute = u.muted
       ? `<button class="small secondary" data-act="unmute" data-id="${u.id}">Unmute</button>`
       : `<button class="small secondary" data-act="mute" data-id="${u.id}">Mute</button>`;
-    return `<tr><td>${esc(u.username)}${tags}</td><td>${fmtDate(u.last_active)}</td>` +
+    const wings = u.can_fly
+      ? `<button class="small secondary" data-act="unwings" data-id="${u.id}">Remove wings</button>`
+      : `<button class="small secondary" data-act="wings" data-id="${u.id}">🪽 Grant wings</button>`;
+    const wingTag = u.can_fly ? ' <span class="tag" style="background:#2c5e8a">wings</span>' : '';
+    return `<tr><td>${esc(u.username)}${tags}${wingTag}</td><td>${fmtDate(u.last_active)}</td>` +
       `<td>${u.score ?? 0}</td><td>💰${u.cash ?? 0}</td><td>` +
       `<button class="small" data-act="reset" data-id="${u.id}">Reset</button> ` +
       `<button class="small secondary" data-act="kick" data-id="${u.id}">Kick</button> ` +
-      mute + ` ` + ban + ` ` + promote + ` ` +
+      mute + ` ` + wings + ` ` + ban + ` ` + promote + ` ` +
       `<button class="small danger" data-act="delete" data-id="${u.id}">Delete</button></td></tr>`;
   }).join('') || '<tr><td colspan="5">No accounts.</td></tr>';
 
