@@ -948,8 +948,48 @@ function setupChat() {
 // ---------------------------------------------------------------- combat + blocks
 // Press = attack a player in the crosshair (within the weapon's reach), or start
 // mining the targeted block. Hold to keep mining; harder blocks take longer.
-const mineState = { active: false, key: null, progress: 0 };
+const mineState = { active: false, key: null, progress: 0, swingT: 0 };
 let ownSwing = 0;
+
+// Per-block break progress, persisted by coordinate so a block remembers how
+// damaged it is between hits/shots (its "lifespan" stays based on the last
+// state). Untouched blocks slowly heal so cracks don't linger forever.
+const blockDamage = new Map(); // "x,y,z" -> { dmg, max, t }
+function blockFrac(hit) {
+  const e = blockDamage.get(`${hit.x},${hit.y},${hit.z}`);
+  return e ? Math.min(1, e.dmg / e.max) : 0;
+}
+// Add `amount` damage to the aimed block; break it (into your inventory) when it
+// reaches its hardness. Returns the new 0..1 progress.
+function damageBlock(r, amount) {
+  const t = world.getBlock(r.hit.x, r.hit.y, r.hit.z);
+  if (t === B.AIR || t === B.BEDROCK) return 0;
+  const k = `${r.hit.x},${r.hit.y},${r.hit.z}`;
+  const max = blockHardness(t);
+  let e = blockDamage.get(k);
+  if (!e) { e = { dmg: 0, max, t: 0 }; blockDamage.set(k, e); }
+  e.max = max;
+  e.dmg += amount;
+  e.t = performance.now();
+  if (e.dmg >= max) { breakBlock(r); blockDamage.delete(k); return 1; }
+  return e.dmg / max;
+}
+// Idle blocks slowly recover (cracks fade) so the map stays bounded.
+function decayBlockDamage(now, dt) {
+  for (const [k, e] of blockDamage) {
+    if (now - e.t > 5000) {
+      e.dmg -= e.max * 0.4 * dt; // heal ~2.5s after sitting idle for 5s
+      if (e.dmg <= 0) blockDamage.delete(k);
+    }
+  }
+}
+
+// Fire a visible shot at a block point (gun tracer / wand orb).
+function shootAtBlock(w, point) {
+  const from = camera.position.clone().addScaledVector(aimDirection(), 0.8);
+  if (w.cat === 'magic') shootProjectile(from, aimDirection(), 0xc98bff, { to: point.clone(), size: 0.26, maxDist: 24, speed: 22 });
+  else shootTracer(camera.position.clone(), point, 0xffee88);
+}
 
 // What the primary action (attack/mine button) is currently pointed at. Attack
 // wins when a creature is closer than the aimed block (ranged/magic always
@@ -994,10 +1034,11 @@ function primaryDown() {
     }
     return;
   }
-  // No monster: empty slot mines, a selected block builds.
+  // No monster: weapon slot mines/shoots the block, a selected block builds.
   if (ui.selectedBlock() == null) {
-    audio.play('swing');
-    mineState.active = true; // hold to mine
+    if (w.cat === 'melee') audio.play('swing');
+    mineState.active = true;   // hold to mine (melee) or auto-fire at it (ranged)
+    mineState.swingT = 0;      // fire/chip on the very next frame
   } else {
     placeBlock();
   }
@@ -1010,10 +1051,13 @@ function updateAimUI() {
   if (!el) return;
   if (!player || player.dead) { el.classList.add('hidden'); highlight.visible = false; return; }
   const aim = computeAim(equippedWeapon(myEquipment));
-  if (!aim) { el.classList.add('hidden'); highlight.visible = false; return; }
+  if (!aim) { el.classList.add('hidden'); highlight.visible = false; hideCrack(); return; }
   // 3D wire box on the block (mine) or the placement cell (build).
   if (aim.mode === 'attack') { highlight.visible = false; }
   else { highlight.position.copy(aim.point); highlight.visible = true; }
+  // Show the targeted block's persistent crack state (intensifies as it breaks).
+  if (aim.mode === 'mine') showCrack(aim.r.hit, blockFrac(aim.r.hit));
+  else hideCrack();
   // Project the target to screen and place the bracket.
   _proj.copy(aim.point).project(camera);
   if (_proj.z > 1) { el.classList.add('hidden'); return; }
@@ -1034,33 +1078,33 @@ function primaryUp() {
   mineState.key = null;
   mineState.progress = 0;
   setMineBar(0);
-  hideCrack();
+  // Cracks persist on the block (driven by the aim UI), so don't clear them here.
 }
 
 function updateMining(dt) {
-  if (!mineState.active || !player || player.dead || ui.anyMenuOpen()) { if (!mineState.active) { setMineBar(0); hideCrack(); } return; }
-  // Keep the hand chopping while held.
-  mineState.swingT = (mineState.swingT || 0) - dt;
-  if (mineState.swingT <= 0) { ownSwing = 1; mineState.swingT = 0.45; }
+  if (!mineState.active || !player || player.dead || ui.anyMenuOpen()) { if (!mineState.active) setMineBar(0); return; }
   const r = player.raycast();
-  if (!r) { mineState.key = null; mineState.progress = 0; setMineBar(0); hideCrack(); return; }
+  if (!r) { setMineBar(0); return; }
   const t = world.getBlock(r.hit.x, r.hit.y, r.hit.z);
-  if (t === B.AIR || t === B.BEDROCK) { mineState.progress = 0; setMineBar(0); hideCrack(); return; }
-  const key = `${r.hit.x},${r.hit.y},${r.hit.z}`;
-  if (key !== mineState.key) { mineState.key = key; mineState.progress = 0; }
+  if (t === B.AIR || t === B.BEDROCK) { setMineBar(0); return; }
   const w = equippedWeapon(myEquipment);
-  // Mining speed: weapon's mining power (axe good, gun/wand weak) × strength.
-  const toolFactor = 1 + (w.mine || 0) * 0.4;
-  const time = blockHardness(t) / (toolFactor * miningMult(myProgress));
-  mineState.progress += dt;
-  const frac = Math.min(1, mineState.progress / time);
-  setMineBar(frac);
-  showCrack(r.hit, frac);
-  if (mineState.progress >= time) {
-    breakBlock(r);
-    mineState.progress = 0;
-    mineState.key = null;
-    hideCrack();
+  // Break rate (damage/sec): weapon mining power (axe good, gun/wand weak) × strength.
+  const rate = (1 + (w.mine || 0) * 0.4) * miningMult(myProgress);
+  mineState.swingT -= dt;
+  if (w.cat === 'ranged' || w.cat === 'magic') {
+    // Shooters chip blocks by firing at them on a cadence; each shot adds a chunk.
+    if (mineState.swingT <= 0) {
+      mineState.swingT = 0.4;
+      ownSwing = 1;
+      shootAtBlock(w, new THREE.Vector3(r.hit.x + 0.5, r.hit.y + 0.5, r.hit.z + 0.5));
+      audio.play(w.cat === 'magic' ? 'skillMagic' : 'skillRanged');
+      setMineBar(damageBlock(r, rate * 0.45));
+    } else {
+      setMineBar(blockFrac(r.hit));
+    }
+  } else {
+    if (mineState.swingT <= 0) { ownSwing = 1; mineState.swingT = 0.45; }
+    setMineBar(damageBlock(r, rate * dt)); // melee: continuous chipping
   }
 }
 
@@ -1707,6 +1751,7 @@ function loop(now) {
   world.update(player.pos.x, player.pos.z, radius, 2);
 
   updateMining(dt);   // raycasts from the first-person eye (before the camera pulls back)
+  decayBlockDamage(now, dt); // idle blocks slowly heal their crack damage
   updateAimUI();
   interpolateRemotes(dt);
   updateMobs(dt, now / 1000);

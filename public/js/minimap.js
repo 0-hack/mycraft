@@ -6,12 +6,13 @@ const PERIOD = 16;            // city grid period (must match world.js)
 const ROAD = 4;               // road width in blocks
 const FOOT0 = 6, FOOT1 = 13;  // building footprint (8x8) within a cell
 
-// Stable bright colour per player name (distinct hues on the minimap).
-function playerColor(name) {
+// Stable hue per player name (distinct colours on the minimap).
+function playerHue(name) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
-  return `hsl(${h}, 80%, 62%)`;
+  return h;
 }
+function playerColor(name) { return `hsl(${playerHue(name)}, 80%, 62%)`; }
 
 export class Minimap {
   constructor() {
@@ -87,14 +88,28 @@ export class Minimap {
 
     // Other players, each a distinct colour derived from their name so they're
     // easy to tell apart. World x → right, world z → down (so −z is "up"/north).
+    // Players outside the map's range get a fading glow on the rim pointing
+    // toward them, so you always know roughly where everyone is.
     for (const r of remotes.values()) {
       let dx = (r.group.position.x - player.pos.x) * scale;
       let dy = (r.group.position.z - player.pos.z) * scale;
       const d = Math.hypot(dx, dy);
+      const hue = playerHue(r.name || '');
+      const color = `hsl(${hue}, 80%, 62%)`;
       let onEdge = false;
-      if (d > R - 6) { const k = (R - 6) / (d || 1); dx *= k; dy *= k; onEdge = true; }
+      if (d > R - 6) {
+        const k = (R - 6) / (d || 1); dx *= k; dy *= k; onEdge = true;
+        // Directional glow on the rim toward the off-map player.
+        const ux = dx / (Math.hypot(dx, dy) || 1), uy = dy / (Math.hypot(dx, dy) || 1);
+        const ex = cx + ux * R, ey = cy + uy * R;
+        const grad = ctx.createRadialGradient(ex, ey, 0, ex, ey, R * 0.6);
+        grad.addColorStop(0, `hsla(${hue}, 85%, 62%, 0.6)`);
+        grad.addColorStop(0.5, `hsla(${hue}, 85%, 62%, 0.18)`);
+        grad.addColorStop(1, `hsla(${hue}, 85%, 62%, 0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(ex, ey, R * 0.6, 0, Math.PI * 2); ctx.fill();
+      }
       const px = cx + dx, py = cy + dy;
-      const color = playerColor(r.name || '');
       ctx.beginPath();
       ctx.arc(px, py, onEdge ? 3 : 4.5, 0, Math.PI * 2);
       ctx.fillStyle = color;
