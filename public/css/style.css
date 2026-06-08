@@ -372,6 +372,11 @@ body.touch #btn-mine { right: var(--edge); bottom: var(--edge);
   width: var(--bp); height: var(--bp); font-size: calc(var(--bp) * 0.37); }
 /* View toggle lives top-right (under the minimap), clear of the thumb cluster. */
 body.touch #btn-view { top: clamp(74px, 13vh, 96px); right: var(--edge); bottom: auto; }
+/* Hold-to-fly button (only shown for players with wings): mid-right edge, clear
+   of the minimap/vitals above and the skill cluster below. */
+body.touch #btn-fly { top: 45%; right: var(--edge); bottom: auto; transform: translateY(-50%);
+  background: rgba(40,28,70,0.6); border-color: rgba(201,139,255,0.6); }
+body.touch #btn-fly.flying { background: rgba(95,211,160,0.8); border-color: #7fe3a0; }
 body.touch #skillbar { position: fixed; left: auto; right: 0; bottom: 0; transform: none;
   width: 0; height: 0; display: block; z-index: 17; }
 body.touch #skillbar .skill { position: absolute; width: var(--bs); height: var(--bs); }

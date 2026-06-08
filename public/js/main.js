@@ -335,9 +335,16 @@ function setupNetwork() {
     if (r) { r.painUntil = performance.now() + 450; setPainFace(r.group, true); }
   });
   net.on('chat', (msg) => ui.addChat(msg.name, msg.text, msg.system));
-  net.on('disconnect', () => ui.addChat('', 'Disconnected from server. Reconnecting…', true));
+  net.on('sessionReplaced', () => {
+    sessionEnded = true;
+    ui.toast('⚠️ You logged in on another device.\nThis session has ended.');
+  });
+  net.on('disconnect', () => ui.addChat('',
+    sessionEnded ? 'Session ended — you logged in on another device.'
+                 : 'Disconnected from server. Reconnecting…', true));
 }
 
+let sessionEnded = false; // set when the server kicks us for a newer login
 let currentStats = defaultStats();
 function defaultStats() {
   return { score: 0, level: 1, xp: 0, nextLevelXp: 50, blocksMined: 0, blocksPlaced: 0, kills: 0, cash: 0, inventory: {}, equipment: defaultEquipment(), progress: defaultProgress('soldier') };
@@ -630,10 +637,12 @@ function setCanFly(v) {
   if (player) player.canFly = canFly;
   const ind = document.getElementById('fly-indicator');
   if (ind) ind.classList.toggle('hidden', !canFly);
+  const flyBtn = document.getElementById('btn-fly'); // mobile hold-to-fly
+  if (flyBtn) flyBtn.classList.toggle('hidden', !canFly);
   if (thirdPerson) rebuildOwnAvatar(); // show/hide the wings on the avatar
   if (canFly && !was) ui.toast(isTouchDevice()
-    ? '🪽 Wings granted! Hold the jump button to fly.'
-    : '🪽 Wings granted! Hold Space to fly.');
+    ? '🪽 Wings granted! Hold the 🪽 button (right side) to fly.'
+    : '🪽 Wings granted! Hold Space to fly — steer with WASD + look.');
 }
 
 // ---- custom respawn point ----
@@ -782,6 +791,12 @@ function setupDesktopControls() {
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
   addEventListener('keydown', (e) => {
+    // While dead, Enter or Esc respawns (matches the on-screen button).
+    if (player && player.dead && !chatOpen) {
+      if (e.code === 'Enter' || e.code === 'Escape' || e.code === 'NumpadEnter') {
+        net.sendRespawn(); e.preventDefault(); e.stopImmediatePropagation(); return;
+      }
+    }
     if ((e.code === 'KeyB' || e.code === 'KeyI') && !chatOpen) { ui.toggleBag(); return; }
     if (e.code === 'KeyK' && !chatOpen) { togglePanel('charsheet'); return; } // attributes + skills
     if (e.code === 'KeyO' && !chatOpen) { togglePanel('settings'); return; }  // settings

@@ -140,4 +140,15 @@ export function setupMobileControls(player, ui, actions) {
   // Sprinting is driven by the movement joystick (push forward to the outer
   // ring); there is no separate sprint button on touch.
   toggle('btn-view', () => actions.onView());
+
+  // Hold-to-fly button (wings): while held, ascend; steering is via the joystick
+  // and look drag. Mirrors holding the jump key on desktop.
+  const fly = document.getElementById('btn-fly');
+  if (fly) {
+    const flyDown = (e) => { e.preventDefault(); e.stopPropagation(); player.input.jump = true; fly.classList.add('flying'); };
+    const flyUp = (e) => { if (e) e.preventDefault(); player.input.jump = false; fly.classList.remove('flying'); };
+    fly.addEventListener('touchstart', flyDown, { passive: false });
+    fly.addEventListener('touchend', flyUp, { passive: false });
+    fly.addEventListener('touchcancel', flyUp, { passive: false });
+  }
 }

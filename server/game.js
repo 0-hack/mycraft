@@ -29,6 +29,10 @@ const SPAWN = { x: 8, y: 40, z: 8, yaw: 0, pitch: 0 };
 const REACH_SLACK = 1.5;
 const ATTACK_COOLDOWN = 300;
 const KILL_SCORE = 50;
+// You can only be attacked by something on roughly your own level: fly/climb
+// above this many blocks and grounded monsters/players can't reach you. Ground
+// monsters also won't chase a target higher than this (they stay grounded).
+const VERT_LIMIT = 3.0;
 
 // Collectible pickups. medkit heals, food restores stamina (hunger).
 const PICKUP_KINDS = {
@@ -184,6 +188,17 @@ export function attachGame(server) {
         // Reject if the account was deleted or banned since the token was issued.
         const urow = userQueries.byId.get(payload.id);
         if (!urow || urow.banned) return send(ws, { type: 'authError' }), ws.close();
+        // One session per account: if this user is already connected elsewhere,
+        // kick the older session so there's never a duplicate player in-world.
+        const existing = findByUserId(payload.id);
+        if (existing) {
+          existing.skipSave = true; // the incoming session owns the latest state
+          send(existing.ws, { type: 'chat', name: '', text: 'You logged in from another device — this session was disconnected.', system: true });
+          send(existing.ws, { type: 'sessionReplaced' });
+          try { existing.ws.close(); } catch { /* ignore */ }
+          clients.delete(existing.ws);
+          broadcast({ type: 'playerLeave', id: existing.netId });
+        }
         const state = loadState(payload.id);
         // Marina City has a flat street level (y=22); rescue any player whose
         // saved position predates the city (could be underground now) by
@@ -280,6 +295,7 @@ export function attachGame(server) {
           if (msg.targetType === 'mob') {
             const m = mobs.get(msg.target);
             if (!m) break;
+            if (Math.abs(m.y - s.y) > VERT_LIMIT) break; // can't hit across a big height gap
             if (Math.hypot(m.x - s.x, m.y - s.y, m.z - s.z) > w.reach + REACH_SLACK) break;
             hurtMob(m, Math.round(rolled.dmg), ctx, rolled.crit ? 'crit' : 'hit');
             break;
@@ -288,6 +304,7 @@ export function attachGame(server) {
           for (const c of clients.values()) if (c.netId === msg.target) { target = c; break; }
           if (!target || target === ctx || target.dead) break;
           const ts = target.state;
+          if (Math.abs(ts.y - s.y) > VERT_LIMIT) break; // only same-level players can be hit
           const dist = Math.hypot(ts.x - s.x, ts.y - s.y, ts.z - s.z);
           if (dist > w.reach + REACH_SLACK) break;
           const def = defenseOf(safeParse(ts.equipment, null)) + defenseBonus(safeParse(ts.progress, null)) + buffMult(target, 'def', 0);
@@ -614,10 +631,10 @@ export function attachGame(server) {
       const r = critize(p, basePower); const fx = r.crit ? 'crit' : 'skill'; const power = Math.round(r.dmg);
       if (msg.targetType === 'mob') {
         const m = mobs.get(msg.target);
-        if (m && dist3(s, m) <= nukeRange) { applyStatuses(m.effects, skill.status, lvl, ctx.netId); hurtMob(m, power, ctx, fx); }
+        if (m && Math.abs(m.y - s.y) <= VERT_LIMIT && dist3(s, m) <= nukeRange) { applyStatuses(m.effects, skill.status, lvl, ctx.netId); hurtMob(m, power, ctx, fx); }
       } else {
         let t = null; for (const c of clients.values()) if (c.netId === msg.target) t = c;
-        if (t && t !== ctx && !t.dead && dist3(s, t.state) <= nukeRange) {
+        if (t && t !== ctx && !t.dead && Math.abs(t.state.y - s.y) <= VERT_LIMIT && dist3(s, t.state) <= nukeRange) {
           const def = defenseOf(safeParse(t.state.equipment, null)) + defenseBonus(safeParse(t.state.progress, null)) + buffMult(t, 'def', 0);
           applyPlayerStatus(t, skill.status, lvl, ctx.netId);
           applyDamage(t, mitigate(power, def), ctx, 'combat', r.crit ? 'crit' : undefined);
@@ -895,8 +912,12 @@ export function attachGame(server) {
         if (!mobBlocked(nx, m.z, m.y)) m.x = nx;
         if (!mobBlocked(m.x, nz, m.y)) m.z = nz;
       }
-      m.y = round1(m.y + (tgt.state.y - m.y) * Math.min(1, dt * 4));
-      if (dist <= def.reach && now - m.lastAttack > 1200) {
+      // Ground monsters follow the target's height only over small steps (stairs/
+      // slopes); they won't levitate after a target that flies out of reach.
+      const dy = tgt.state.y - m.y;
+      if (Math.abs(dy) <= VERT_LIMIT) m.y = round1(m.y + dy * Math.min(1, dt * 4));
+      // Can only attack a target on roughly the same level (not one flying above).
+      if (dist <= def.reach && Math.abs(dy) <= VERT_LIMIT && now - m.lastAttack > 1200) {
         m.lastAttack = now;
         const def2 = defenseOf(safeParse(tgt.state.equipment, null)) + defenseBonus(safeParse(tgt.state.progress, null)) + buffMult(tgt, 'def', 0);
         applyDamage(tgt, mitigate(def.dmg * cfg.mobPower, def2), null, 'a ' + def.name);

@@ -37,7 +37,7 @@
   <div id="hud" class="hidden">
     <div id="hurt-flash"></div>
     <div id="crosshair">＋</div>
-    <div id="fly-indicator" class="hidden">🪽 Jump to fly</div>
+    <div id="fly-indicator" class="hidden">🪽 Hold to fly · steer with move + look</div>
     <div id="target-bracket" class="hidden"><i></i><i></i><i></i><i></i></div>
     <div id="mine-bar"><div></div></div>
     <div id="floats"></div>
@@ -85,6 +85,7 @@
         <p>Your progress is saved. You'll respawn at your saved spawn point
           (set one via ⚙ Settings → 📍 Set spawn point), or the city centre.</p>
         <button id="btn-respawn">Respawn</button>
+        <p class="hint" style="margin-top:8px">Press <b>Enter</b> or <b>Esc</b> to respawn.</p>
       </div>
     </div>
 
@@ -234,6 +235,7 @@
     <div id="touch-buttons">
       <button id="btn-mine" class="tbtn">⛏</button>
       <button id="btn-view" class="tbtn">👁</button>
+      <button id="btn-fly" class="tbtn hidden" title="Hold to fly">🪽</button>
     </div>
   </div>
 

@@ -10,7 +10,9 @@ const GRAVITY = 28;
 const JUMP_SPEED = 9;
 const WALK = 5.2;
 const SPRINT = 8.0;
-const FLY_SPEED = 8.0;     // vertical climb speed while flying (wings)
+const FLY_MOVE = 9.5;      // horizontal/aim-relative fly speed (faster than walk)
+const FLY_SPRINT = 14.0;   // fly speed while sprinting
+const FLY_CLIMB = 8.5;     // extra lift while holding the jump/fly control
 const REACH = 6;
 const SPRINT_DRAIN = 5;   // seconds of sprint to fully deplete stamina
 const SPRINT_REFILL = 7;  // seconds to fully refill
@@ -59,6 +61,12 @@ export class Player {
     return new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
   }
 
+  // Full 3D look direction (includes pitch) — used to steer flight by aim.
+  flyForward() {
+    const cp = Math.cos(this.pitch);
+    return new THREE.Vector3(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
+  }
+
   collides(x, y, z) {
     const minX = Math.floor(x - HALF_W), maxX = Math.floor(x + HALF_W);
     const minY = Math.floor(y), maxY = Math.floor(y + HEIGHT);
@@ -91,35 +99,49 @@ export class Player {
       if (this.staminaLocked && this.stamina >= 1) this.staminaLocked = false;
     }
 
-    // Horizontal movement relative to yaw.
-    const speed = (this._effSprint ? SPRINT : WALK) * (this.inWater ? 0.6 : 1) * this.speedMul;
-    const fwd = this.forwardDir();
-    const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
-    const move = new THREE.Vector3();
-    move.addScaledVector(fwd, this.input.forward);
-    move.addScaledVector(right, this.input.strafe);
-    if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed);
-    this.vel.x = move.x;
-    this.vel.z = move.z;
+    // Wings: flight starts when you hold the jump/fly control, and continues
+    // while you stay airborne. Landing (and releasing) returns you to walking,
+    // so you don't auto-hover at spawn or when simply stepping off a ledge.
+    const wantFly = this.canFly && !this.inWater && (this.input.jump || (!this.onGround && this.flying));
+    this.flying = wantFly;
 
-    // Gravity / buoyancy / flight.
-    if (this.inWater) {
-      this.vel.y += -GRAVITY * 0.25 * dt;
-      this.vel.y = Math.max(this.vel.y, -3);
-      if (this.input.jump) this.vel.y = 4; // swim up
-      this.flying = false;
-    } else if (this.canFly) {
-      // Creative-style wings: hold jump to climb, otherwise drift down gently
-      // and hover. No gravity slam, so flight feels smooth.
-      this.flying = true;
-      if (this.input.jump) this.vel.y = FLY_SPEED;
-      else this.vel.y = Math.max(this.vel.y - GRAVITY * 0.25 * dt, -FLY_SPEED * 0.5);
+    if (wantFly) {
+      // Steer with the joystick/WASD *and* the look angle: forward follows where
+      // you're pointing (look down to dive, up to climb), holding jump adds a
+      // steady lift. Horizontal "right" stays level so strafing feels natural.
+      const fwd3 = this.flyForward();
+      const fwdH = this.forwardDir();
+      const right = new THREE.Vector3(-fwdH.z, 0, fwdH.x);
+      const move = new THREE.Vector3();
+      move.addScaledVector(fwd3, this.input.forward);
+      move.addScaledVector(right, this.input.strafe);
+      const flySpeed = (this._effSprint ? FLY_SPRINT : FLY_MOVE) * this.speedMul;
+      if (move.lengthSq() > 0) move.normalize().multiplyScalar(flySpeed);
+      if (this.input.jump) move.y += FLY_CLIMB; // hold to elevate
+      this.vel.set(move.x, move.y, move.z);
     } else {
-      this.flying = false;
-      this.vel.y -= GRAVITY * dt;
-      if (this.input.jump && this.onGround) {
-        this.vel.y = JUMP_SPEED;
-        this.onGround = false;
+      // Normal grounded movement relative to yaw.
+      const speed = (this._effSprint ? SPRINT : WALK) * (this.inWater ? 0.6 : 1) * this.speedMul;
+      const fwd = this.forwardDir();
+      const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+      const move = new THREE.Vector3();
+      move.addScaledVector(fwd, this.input.forward);
+      move.addScaledVector(right, this.input.strafe);
+      if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed);
+      this.vel.x = move.x;
+      this.vel.z = move.z;
+
+      // Gravity / buoyancy.
+      if (this.inWater) {
+        this.vel.y += -GRAVITY * 0.25 * dt;
+        this.vel.y = Math.max(this.vel.y, -3);
+        if (this.input.jump) this.vel.y = 4; // swim up
+      } else {
+        this.vel.y -= GRAVITY * dt;
+        if (this.input.jump && this.onGround) {
+          this.vel.y = JUMP_SPEED;
+          this.onGround = false;
+        }
       }
     }
 
