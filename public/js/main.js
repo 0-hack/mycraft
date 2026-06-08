@@ -8,11 +8,11 @@ import { UI } from './ui.js';
 import { B, isSolid } from './blocks.js';
 import { isTouchDevice, setupMobileControls } from './mobile.js';
 import { Minimap } from './minimap.js';
-import { buildCharacter, animateCharacter, addWings } from './character.js';
+import { buildCharacter, animateCharacter, addWings, setPainFace } from './character.js';
 import { CharacterEditor } from './chareditor.js';
 import { Tutorial, tutorialSeen } from './tutorial.js';
 import { addAccent } from './detail.js';
-import { equippedWeapon, speedMultiplier, bodyArmorWeight, defaultEquipment } from './gear.js';
+import { equippedWeapon, speedMultiplier, bodyArmorWeight, defaultEquipment, WEAPONS } from './gear.js';
 import { speedAttrMult, hungerMult, maxHealth, miningMult, defaultProgress, classSkills, CLASSES } from './rpg.js';
 import { blockHardness } from './blocks.js';
 import { MOB_TYPES } from './mobs.js';
@@ -199,6 +199,13 @@ function setupNetwork() {
     const affected = world.applyEdit(msg.x, msg.y, msg.z, msg.t);
     world.remeshChunks(affected);
   });
+  net.on('placeDenied', (msg) => {
+    // Server rejected a build (out of that block) — revert our optimistic edit.
+    if (!world) return;
+    const affected = world.applyEdit(msg.x, msg.y, msg.z, B.AIR);
+    world.remeshChunks(affected);
+    ui.toast('⛏ Out of that block — mine more to build.');
+  });
   net.on('stats', (msg) => {
     if (msg.state) {
       currentStats = { ...currentStats, ...msg.state };
@@ -245,7 +252,10 @@ function setupNetwork() {
     player.setHealth(msg.health, msg.dead);
     if (msg.dead && !wasDead) audio.play('death');
     if (typeof msg.hunger === 'number') player.hunger = msg.hunger;
-    if (msg.hit) { hurtFlash(); audio.play('hurt'); }
+    if (msg.hit) {
+      hurtFlash(); audio.play('hurt');
+      if (ownAvatar) { setPainFace(ownAvatar, true); setTimeout(() => ownAvatar && setPainFace(ownAvatar, false), 450); }
+    }
     if (msg.dmg) selfFloat('-' + msg.dmg + (msg.fx === 'crit' ? '!' : ''), msg.fx === 'crit' ? '#ffd23f' : '#ff6b6b');
     if (msg.heal) { selfFloat('+' + msg.heal, '#7fe3a0'); audio.play('heal'); }
   });
@@ -312,6 +322,18 @@ function setupNetwork() {
     const r = remotePlayers.get(msg.id);
     if (r) r.swing = 1; // animation progress, decays in the loop
   });
+  net.on('playerFly', (msg) => {
+    const r = remotePlayers.get(msg.id);
+    if (r && r.canFly !== !!msg.value) { r.canFly = !!msg.value; rebuildRemoteAvatar(r); }
+  });
+  net.on('playerDead', (msg) => {
+    const r = remotePlayers.get(msg.id);
+    if (r) r.dead = !!msg.dead;
+  });
+  net.on('playerHurt', (msg) => {
+    const r = remotePlayers.get(msg.id);
+    if (r) { r.painUntil = performance.now() + 450; setPainFace(r.group, true); }
+  });
   net.on('chat', (msg) => ui.addChat(msg.name, msg.text, msg.system));
   net.on('disconnect', () => ui.addChat('', 'Disconnected from server. Reconnecting…', true));
 }
@@ -337,6 +359,11 @@ function switchWeapon() {
   const target = myEquipment.weapon === 'axe' ? primary : 'axe';
   if (!owned[target]) { ui.toast('🪓 You don\'t have that weapon yet — craft it in the Bag.'); return; }
   if (target === myEquipment.weapon) return;
+  // Optimistic icon + feedback so the swap is obvious (esp. on touch); the
+  // server confirms via a stats push.
+  ui.setHeldWeapon(target);
+  const w = WEAPONS[target] || {};
+  ui.toast(`${w.icon || ''} ${w.name || target} equipped`);
   net.sendCraft({ kind: 'weapon', item: target, action: 'equip' });
 }
 function applyProgress(p) { myProgress = p; ui.setProgress(p); recomputeDerived(); buildSkillBar(); }
@@ -387,7 +414,16 @@ function useSkillSlot(slot) {
   let target = null, tt = null;
   if (sk.kind === 'nuke') {
     const t = findTarget({ reach: 36 * tuning.skillRangeMult, type: 'ranged', cat: sk.cat });
-    if (t) { target = t.id; tt = t.kind; if (t.point) shootTracer(camera.position.clone(), t.point, skillColor(sk)); }
+    if (t) target = t.id, tt = t.kind;
+    // Magic skills (fireball) launch a big glowing orb in the aim direction; it
+    // homes onto a target if there is one, else streaks off and fades.
+    const from = camera.position.clone().addScaledVector(aimDirection(), 0.8);
+    if (sk.cat === 'magic') {
+      shootProjectile(from, aimDirection(), skillColor(sk),
+        { to: t && t.point ? t.point.clone() : null, size: 0.34, maxDist: 30 });
+    } else if (t && t.point) {
+      shootTracer(camera.position.clone(), t.point, skillColor(sk));
+    }
   } else if (sk.kind === 'aoe') {
     spawnRing(player.pos.clone(), (sk.radius || 4) + lvl * 0.4, skillColor(sk));
   }
@@ -475,12 +511,33 @@ function buildViewModel() {
   };
   box(0.16, 0.16, 0.34, 0, 0, -0.18, sleeve);   // forearm (sleeve)
   box(0.17, 0.17, 0.18, 0, 0, -0.4, skin);       // hand
-  const wc = VM_WEAPON_COLOR[(myEquipment && myEquipment.weapon) || 'sword'];
+  const w = (myEquipment && myEquipment.weapon) || 'sword';
+  const wc = VM_WEAPON_COLOR[w];
+  const WOOD = '#6b4f2a';
   if (wc) {
-    const w = myEquipment.weapon;
-    if (w === 'bow') box(0.04, 0.5, 0.04, 0, 0, -0.5, wc);
-    else if (w === 'gun') box(0.08, 0.12, 0.3, 0, 0.02, -0.6, wc);
-    else box(0.05, 0.05, 0.5, 0, 0.04, -0.66, wc); // sword/axe/pickaxe/spear/staff blade
+    if (w === 'sword') {
+      box(0.05, 0.05, 0.5, 0, 0.04, -0.7, wc);          // blade
+      box(0.22, 0.06, 0.06, 0, 0.04, -0.5, '#caa54a');  // crossguard
+    } else if (w === 'spear') {
+      box(0.04, 0.04, 0.8, 0, 0.04, -0.85, WOOD);       // shaft
+      box(0.08, 0.08, 0.14, 0, 0.04, -1.28, wc);        // head
+    } else if (w === 'axe') {
+      box(0.05, 0.05, 0.46, 0, 0.04, -0.68, WOOD);      // handle
+      box(0.05, 0.30, 0.20, 0.13, 0.08, -0.84, wc);     // broad axe head (offset)
+      box(0.05, 0.22, 0.10, 0.22, 0.08, -0.84, '#cdd3da'); // edge
+    } else if (w === 'pickaxe') {
+      box(0.05, 0.05, 0.46, 0, 0.04, -0.68, WOOD);      // handle
+      box(0.5, 0.05, 0.05, 0, 0.08, -0.86, wc);         // crossbar head
+    } else if (w === 'bow') {
+      box(0.04, 0.62, 0.04, 0, 0.04, -0.7, wc);         // riser
+      box(0.015, 0.64, 0.015, 0, 0.04, -0.64, '#eeeeee'); // string
+    } else if (w === 'gun') {
+      box(0.08, 0.12, 0.3, 0, 0.02, -0.62, wc);         // body
+      box(0.05, 0.05, 0.22, 0, 0.04, -0.84, '#15181d'); // barrel
+    } else if (w === 'staff') {
+      box(0.035, 0.035, 0.5, 0, 0.04, -0.7, WOOD);      // wand shaft
+      box(0.14, 0.14, 0.14, 0, 0.06, -0.98, '#c98bff'); // glowing crystal orb
+    }
   }
   viewModel.position.set(0.42, -0.38, -0.5);
   camera.add(viewModel);
@@ -497,13 +554,20 @@ function updateViewModel(dt) {
 }
 
 // Pose the player's own avatar and pull the camera back behind it.
+let ownBodyYaw = 0;
 function updateThirdPerson(dt) {
   if (!thirdPerson || !ownAvatar || !player) return;
   ownAvatar.position.set(player.pos.x, player.pos.y, player.pos.z);
-  ownAvatar.rotation.y = player.yaw + Math.PI;
+  if (player.dead) {
+    ownAvatar.rotation.set(-Math.PI / 2, player.yaw + Math.PI, 0); // lie down when dead
+    return;
+  }
+  // Body yaw lags the look yaw so the head leads when turning.
+  ownBodyYaw += angleDelta(player.yaw, ownBodyYaw) * Math.min(1, dt * 8);
+  ownAvatar.rotation.set(0, ownBodyYaw + Math.PI, 0);
   const moving = player.input.forward !== 0 || player.input.strafe !== 0;
   ownPhase += dt * (moving ? 9 : 0);
-  animateCharacter(ownAvatar.userData.parts, { phase: ownPhase, moving, swing: ownSwing, pitch: player.pitch });
+  animateCharacter(ownAvatar.userData.parts, { phase: ownPhase, moving, swing: ownSwing, pitch: player.pitch, headYaw: player.yaw - ownBodyYaw });
   // Flap the wings while flying; rest them otherwise.
   const wings = ownAvatar.userData.wings;
   if (wings) {
@@ -605,28 +669,30 @@ function nameTag(name) {
   return sprite;
 }
 
-function makeAvatar(name, appearance, equipment) {
+function makeAvatar(name, appearance, equipment, canFly) {
   const group = buildCharacter(appearance, equipment);
+  if (canFly) addWings(group); // so other players can see the game master's wings
   group.add(nameTag(name));
   return group;
 }
 
 function addRemote(p) {
   if (remotePlayers.has(p.id)) return;
-  const group = makeAvatar(p.name, p.appearance, p.equipment);
+  const group = makeAvatar(p.name, p.appearance, p.equipment, p.canFly);
   group.position.set(p.x, p.y, p.z);
   scene.add(group);
   remotePlayers.set(p.id, {
     group, target: new THREE.Vector3(p.x, p.y, p.z), yaw: p.yaw || 0, pitch: p.pitch || 0,
     name: p.name, appearance: p.appearance, equipment: p.equipment,
+    canFly: !!p.canFly, dead: !!p.dead, bodyYaw: p.yaw || 0, painUntil: 0,
     phase: 0, swing: 0, lastPos: new THREE.Vector3(p.x, p.y, p.z),
   });
 }
 
-// Rebuild a remote avatar when appearance/equipment changes (preserve transform).
+// Rebuild a remote avatar when appearance/equipment/wings change (keep transform).
 function rebuildRemoteAvatar(r) {
   const old = r.group;
-  const group = makeAvatar(r.name, r.appearance, r.equipment);
+  const group = makeAvatar(r.name, r.appearance, r.equipment, r.canFly);
   group.position.copy(old.position);
   group.rotation.y = old.rotation.y;
   scene.add(group);
@@ -837,10 +903,12 @@ function primaryDown() {
   if (aim && aim.mode === 'attack') {
     const target = aim.target;
     net.sendAttack(target.id, w.id, target.kind);
-    audio.play(w.cat === 'ranged' ? 'skillRanged' : 'hit');
-    if (w.cat === 'ranged' || w.cat === 'magic') {
-      const color = w.cat === 'magic' ? 0xbb66ff : 0xffee88;
-      shootTracer(camera.position.clone(), target.point, color);
+    audio.play(w.cat === 'magic' ? 'skillMagic' : w.cat === 'ranged' ? 'skillRanged' : 'hit');
+    if (w.cat === 'magic') {
+      const from = camera.position.clone().addScaledVector(aimDirection(), 0.8);
+      shootProjectile(from, aimDirection(), 0xc98bff, { to: target.point.clone(), size: 0.24, maxDist: 24 });
+    } else if (w.cat === 'ranged') {
+      shootTracer(camera.position.clone(), target.point, 0xffee88);
     }
     return;
   }
@@ -948,6 +1016,47 @@ function shootTracer(from, to, color) {
   setTimeout(() => { scene.remove(line); geo.dispose(); line.material.dispose(); }, 100);
 }
 
+// An obvious glowing projectile that flies from `from` along `dir`. If `to` is
+// given it homes onto that point (a hit); otherwise it streaks ahead and fades
+// after `maxDist` blocks (a miss). Used for the mage's fireball etc.
+function shootProjectile(from, dir, color, { to = null, maxDist = 26, speed = 34, size = 0.32 } = {}) {
+  if (!scene) return;
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(size, 12, 12),
+    new THREE.MeshBasicMaterial({ color }));
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(size * 2.1, 12, 12),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35 }));
+  core.add(glow);
+  core.position.copy(from);
+  scene.add(core);
+  const d = dir.clone().normalize();
+  let travelled = 0;
+  let lastT = performance.now();
+  const step = () => {
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+    const adv = speed * dt;
+    travelled += adv;
+    core.position.addScaledVector(d, adv);
+    glow.material.opacity = 0.35 * (1 - travelled / (maxDist * 1.1));
+    const reached = to && core.position.distanceTo(to) < 0.8;
+    if (reached) { spawnRing(to.clone(), 1.4, color); cleanup(); return; }
+    if (travelled >= maxDist) { glow.material.opacity = 0; cleanup(); return; } // fade out, no target
+    requestAnimationFrame(step);
+  };
+  const cleanup = () => {
+    scene.remove(core);
+    core.geometry.dispose(); core.material.dispose();
+    glow.geometry.dispose(); glow.material.dispose();
+  };
+  requestAnimationFrame(step);
+}
+
+// World-space aim direction from the camera (the way the player is pointing).
+const _aimDir = new THREE.Vector3();
+function aimDirection() { camera.getWorldDirection(_aimDir); return _aimDir.clone(); }
+
 function breakBlock(r) {
   if (!player || player.dead) return;
   r = r || player.raycast();
@@ -964,6 +1073,12 @@ function placeBlock() {
   if (!player || player.dead) return;
   const block = ui.selectedBlock();
   if (block == null) return; // a tool is selected, nothing to place
+  // Building consumes mined blocks — you can't place what you haven't gathered.
+  if (ui.blockCount(block) <= 0) {
+    ui.toast('⛏ Mine more of this block to build with it.');
+    audio.play('swing');
+    return;
+  }
   const r = player.raycast();
   if (!r) return;
   const { x, y, z } = r.place;
@@ -972,6 +1087,11 @@ function placeBlock() {
   const affected = world.applyEdit(x, y, z, block);
   world.remeshChunks(affected);
   audio.play('place');
+  // Optimistically decrement; the server's authoritative stats will reconcile.
+  if (currentStats.inventory) {
+    currentStats.inventory[block] = Math.max(0, (currentStats.inventory[block] || 0) - 1);
+    ui.inventory = currentStats.inventory; ui.updateBlockCounts();
+  }
   net.sendBlock('place', x, y, z, block);
 }
 
@@ -1483,13 +1603,32 @@ function loop(now) {
   renderer.render(scene, camera);
 }
 
+// Shortest signed angle difference (−PI..PI).
+function angleDelta(target, current) {
+  let d = (target - current) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
 function interpolateRemotes(dt) {
   const a = Math.min(1, dt * 10);
+  const now = performance.now();
   for (const r of remotePlayers.values()) {
     r.group.position.lerp(r.target, a);
-    r.group.rotation.y = r.yaw + Math.PI; // model faces +z; turn so it faces the look dir
 
-    // Animate: walk cycle when moving, decay any attack swing, head pitch.
+    if (r.dead) {
+      // Lay the fallen player on the ground instead of standing frozen.
+      r.group.rotation.set(-Math.PI / 2, r.yaw + Math.PI, 0);
+      r.lastPos.copy(r.group.position);
+      continue;
+    }
+
+    // The body turns to follow the look yaw, but lags slightly so the head
+    // leads — turning your view visibly turns the head first.
+    r.bodyYaw += angleDelta(r.yaw, r.bodyYaw) * Math.min(1, dt * 8);
+    r.group.rotation.set(0, r.bodyYaw + Math.PI, 0);
+
     const moved = Math.hypot(
       r.group.position.x - r.lastPos.x, r.group.position.z - r.lastPos.z);
     const speed = moved / Math.max(dt, 1e-3);
@@ -1497,7 +1636,8 @@ function interpolateRemotes(dt) {
     r.phase += dt * (moving ? 9 : 0);
     if (r.swing > 0) r.swing = Math.max(0, r.swing - dt * 3);
     animateCharacter(r.group.userData.parts,
-      { phase: r.phase, moving, swing: r.swing, pitch: r.pitch || 0 });
+      { phase: r.phase, moving, swing: r.swing, pitch: r.pitch || 0, headYaw: r.yaw - r.bodyYaw });
+    if (r.painUntil && now > r.painUntil) { r.painUntil = 0; setPainFace(r.group, false); }
     r.lastPos.copy(r.group.position);
   }
 }

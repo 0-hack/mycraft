@@ -148,6 +148,10 @@ body.touch #consumables { left: 14px; right: auto; bottom: 200px; flex-direction
 .slot .ico { font-size: 20px; line-height: 1; }
 .slot.tool { background: rgba(40,28,16,0.6); border-color: rgba(244,211,94,0.45); }
 .slot .num { position: absolute; top: 1px; left: 4px; font-size: 10px; color: #cfe; opacity: 0.8; }
+.slot .count { position: absolute; bottom: 0; right: 2px; font-size: 11px; font-weight: 700;
+  color: #fff; text-shadow: 0 1px 2px #000, 0 0 2px #000; }
+.slot.empty { opacity: 0.42; }
+.slot.empty .count { color: #ff8d8d; }
 .slot.active { border-color: #fff; box-shadow: 0 0 10px rgba(255,255,255,0.5); transform: scale(1.08); }
 
 /* Red damage flash when hit. */

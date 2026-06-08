@@ -80,6 +80,7 @@ export class UI {
     mine.innerHTML = '<span class="ico" id="held-weapon-ico">⚔️</span><span class="num">1</span>';
     mine.onclick = () => { if (this.selected === 0) this.switchWeapon(); else this.selectSlot(0); };
     track.appendChild(mine);
+    this._countEls = {};
     HOTBAR.forEach((type, i) => {
       const slot = document.createElement('div');
       slot.className = 'slot';
@@ -90,6 +91,11 @@ export class UI {
       num.className = 'num';
       num.textContent = i + 2;
       slot.appendChild(num);
+      // Count of this block the player is holding (mined). 0 = can't build it.
+      const cnt = document.createElement('span');
+      cnt.className = 'count';
+      slot.appendChild(cnt);
+      this._countEls[type] = { cnt, slot };
       slot.onclick = () => this.selectSlot(i + 1);
       track.appendChild(slot);
     });
@@ -138,6 +144,18 @@ export class UI {
     if (ico) ico.textContent = (WEAPONS[type] || WEAPONS.fist).icon || '⚔️';
   }
 
+  // Reflect how many of each placeable block the player holds (mined). Empty
+  // slots are dimmed so it's clear you must mine more to build.
+  blockCount(type) { return (this.inventory && this.inventory[type]) || 0; }
+  updateBlockCounts() {
+    if (!this._countEls) return;
+    for (const [type, { cnt, slot }] of Object.entries(this._countEls)) {
+      const n = this.blockCount(type);
+      cnt.textContent = n;
+      slot.classList.toggle('empty', n <= 0);
+    }
+  }
+
   // ---- Vitals (health + food bars) ----
   updateVitals(player) {
     const mh = player.maxHealth || 20;
@@ -166,7 +184,7 @@ export class UI {
     this.el('mined').textContent = s.blocksMined;
     if (typeof s.cash === 'number') { this.cash = s.cash; this.el('cash').textContent = s.cash; }
     this.el('xp-pct').textContent = Math.round(Math.max(0, Math.min(100, (s.xp / s.nextLevelXp) * 100))) + '%';
-    if (s.inventory) this.inventory = s.inventory;
+    if (s.inventory) { this.inventory = s.inventory; this.updateBlockCounts(); }
     if (s.equipment) this.equipment = s.equipment;
     if (s.progress) this.progress = s.progress;
     if (s.consumables) this.consumables = s.consumables;

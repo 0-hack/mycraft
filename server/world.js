@@ -26,6 +26,18 @@ export function setBlock(x, y, z, type) {
   return { x, y, z, t: type };
 }
 
+// The player-edited block at an integer cell, or undefined if untouched (the
+// base procedural terrain is generated client-side and not known here).
+export function getEditBlock(x, y, z) {
+  return edits.get(`${x},${y},${z}`);
+}
+
+// A player-placed block counts as solid for mob collision. type 0 = removed
+// (air); 9 = water. Everything else players can place is a solid obstacle.
+export function isSolidEditType(t) {
+  return t != null && t !== 0 && t !== 9;
+}
+
 export function editCount() {
   return edits.size;
 }

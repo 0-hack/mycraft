@@ -15,7 +15,8 @@ export const BAGS = ['none', 'backpack', 'satchel'];
 const SKIN_TONES = ['#f2d3b3', '#e8b27a', '#c68642', '#8d5524', '#5c3a1e', '#ffe0bd'];
 const HAIR_COLORS = ['#1a1a1a', '#2b1d12', '#5a3a1a', '#a0671f', '#d9b45b', '#b03030', '#3a6ea5', '#7a3aa5', '#cccccc'];
 const CLOTH_COLORS = ['#3a7bd5', '#d54a4a', '#3ad57b', '#f4d35e', '#9b59b6', '#e67e22', '#1abc9c', '#2c3e63', '#ecf0f1', '#34495e', '#ff7eb6'];
-const WEAPON_COLORS = { sword: '#d7dce3', axe: '#9aa3ad', pickaxe: '#aab0b8', spear: '#c9cdd4', bow: '#8a5a2b', gun: '#2b2f36', fist: '#e8b27a' };
+const WEAPON_COLORS = { sword: '#d7dce3', axe: '#9aa3ad', pickaxe: '#aab0b8', spear: '#c9cdd4', bow: '#8a5a2b', gun: '#2b2f36', staff: '#7a3aa5', fist: '#e8b27a' };
+const WOOD = '#6b4f2a';
 
 export function defaultAppearance() {
   return {
@@ -73,12 +74,24 @@ function armorShade(level) {
   return (v << 16) | (v << 8) | v;
 }
 
-function faceTexture(a) {
+function faceTexture(a, pain = false) {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const x = c.getContext('2d');
   x.fillStyle = a.skin; x.fillRect(0, 0, 64, 64);
   const eyeY = 30;
+  // Pain wince: scrunched ">< " eyes and a grimace, regardless of base face.
+  if (pain) {
+    x.strokeStyle = '#1b1b1b'; x.lineWidth = 3; x.lineCap = 'round';
+    const sl = (ex) => { x.beginPath(); x.moveTo(ex - 6, eyeY - 5); x.lineTo(ex, eyeY); x.lineTo(ex - 6, eyeY + 5); x.stroke();
+      x.beginPath(); x.moveTo(ex + 6, eyeY - 5); x.lineTo(ex, eyeY); x.lineTo(ex + 6, eyeY + 5); x.stroke(); };
+    sl(22); sl(42);
+    x.fillStyle = '#7a2f2f'; x.fillRect(24, 46, 16, 7);          // gritted mouth
+    x.fillStyle = '#fff'; for (let i = 0; i < 4; i++) x.fillRect(25 + i * 4, 46, 2, 7);
+    const tex = new THREE.CanvasTexture(c);
+    tex.magFilter = THREE.NearestFilter;
+    return tex;
+  }
   x.fillStyle = '#1b1b1b';
   if (a.face === 'cool') {
     x.fillRect(12, eyeY - 4, 40, 10);
@@ -122,6 +135,19 @@ function buildHead(headG, a) {
   headG.add(head);
   addHair(headG, a);
   addAccessory(headG, a);
+  // Keep the face material + base/pain textures so we can show a pain wince.
+  headG.userData.faceMat = face;
+  headG.userData.faceNormal = face.map;
+  headG.userData.facePain = faceTexture(a, true);
+}
+
+// Swap a character's face to a pained wince (or back). `group` is the avatar
+// returned by buildCharacter.
+export function setPainFace(group, on) {
+  const head = group.userData.parts && group.userData.parts.head;
+  if (!head || !head.userData.faceMat) return;
+  head.userData.faceMat.map = on ? head.userData.facePain : head.userData.faceNormal;
+  head.userData.faceMat.needsUpdate = true;
 }
 
 function addHair(g, a) {
@@ -198,36 +224,61 @@ function addBag(g, a) {
   }
 }
 
-// A weapon held in the right hand (added to the arm pivot at the hand).
+// A weapon held in the right hand (added to the arm pivot at the hand). Each
+// weapon has a distinct silhouette so they read clearly at a glance.
 function addWeapon(armG, type) {
   if (!type || type === 'fist') return;
   const c = WEAPON_COLORS[type] || '#cccccc';
   const hy = -0.58; // hand position within the arm pivot
   switch (type) {
     case 'sword':
-      addBox(armG, 0.05, 0.05, 0.5, 0, hy, 0.28, c);
-      addBox(armG, 0.16, 0.05, 0.06, 0, hy, 0.06, '#6b4f2a');
+      addBox(armG, 0.05, 0.05, 0.5, 0, hy, 0.30, c);          // blade
+      addBox(armG, 0.05, 0.05, 0.08, 0, hy, 0.56, '#cfd6df');  // pointed tip
+      addBox(armG, 0.22, 0.06, 0.06, 0, hy, 0.07, '#caa54a');  // crossguard
+      addBox(armG, 0.05, 0.05, 0.12, 0, hy, -0.02, WOOD);      // grip
+      addBox(armG, 0.08, 0.08, 0.05, 0, hy, -0.09, '#caa54a'); // pommel
       break;
     case 'spear':
-      addBox(armG, 0.04, 0.04, 0.8, 0, hy, 0.4, '#6b4f2a');
-      addBox(armG, 0.07, 0.07, 0.14, 0, hy, 0.82, c);
+      addBox(armG, 0.035, 0.035, 0.9, 0, hy, 0.42, WOOD);      // long shaft
+      addBox(armG, 0.09, 0.09, 0.12, 0, hy, 0.88, c);          // spearhead base
+      addBox(armG, 0.04, 0.04, 0.12, 0, hy, 0.99, '#eef2f7');  // sharp tip
       break;
-    case 'axe':
-      addBox(armG, 0.04, 0.04, 0.4, 0, hy, 0.2, '#6b4f2a');
-      addBox(armG, 0.06, 0.22, 0.16, 0, hy + 0.06, 0.36, c);
+    case 'axe': {
+      addBox(armG, 0.05, 0.05, 0.5, 0, hy, 0.22, WOOD);        // long handle
+      // Broad asymmetric axe head offset to one side of the haft, with a
+      // tapering edge so it clearly reads as an axe (not a wand).
+      addBox(armG, 0.04, 0.30, 0.20, 0.12, hy + 0.04, 0.34, c);
+      addBox(armG, 0.04, 0.22, 0.10, 0.21, hy + 0.04, 0.34, '#cdd3da'); // bit/edge
+      addBox(armG, 0.05, 0.10, 0.10, 0, hy + 0.04, 0.34, '#5a6068');    // collar
       break;
+    }
     case 'pickaxe':
-      addBox(armG, 0.04, 0.04, 0.4, 0, hy, 0.2, '#6b4f2a');
-      addBox(armG, 0.06, 0.06, 0.4, 0, hy + 0.06, 0.36, c);
+      addBox(armG, 0.05, 0.05, 0.46, 0, hy, 0.22, WOOD);       // handle
+      addBox(armG, 0.5, 0.05, 0.05, 0, hy + 0.04, 0.40, c);    // crossbar head
+      addBox(armG, 0.10, 0.05, 0.05, -0.27, hy + 0.04, 0.40, '#cdd3da'); // left point
+      addBox(armG, 0.10, 0.05, 0.05, 0.27, hy + 0.04, 0.40, '#cdd3da');  // right point
       break;
     case 'bow':
-      addBox(armG, 0.05, 0.62, 0.05, 0, hy, 0.22, c);
-      addBox(armG, 0.02, 0.5, 0.02, 0, hy, 0.27, '#eeeeee');
+      addBox(armG, 0.05, 0.64, 0.05, 0, hy, 0.22, c);          // riser
+      addBox(armG, 0.05, 0.12, 0.05, 0, hy + 0.34, 0.18, c);   // upper limb tip
+      addBox(armG, 0.05, 0.12, 0.05, 0, hy - 0.34, 0.18, c);   // lower limb tip
+      addBox(armG, 0.015, 0.66, 0.015, 0, hy, 0.16, '#eeeeee'); // string
       break;
     case 'gun':
-      addBox(armG, 0.08, 0.12, 0.34, 0, hy, 0.22, c);
-      addBox(armG, 0.07, 0.16, 0.08, 0, hy - 0.12, 0.1, c);
+      addBox(armG, 0.09, 0.13, 0.30, 0, hy, 0.20, c);          // body
+      addBox(armG, 0.05, 0.05, 0.22, 0, hy + 0.02, 0.40, '#15181d'); // barrel
+      addBox(armG, 0.07, 0.18, 0.08, 0, hy - 0.13, 0.10, '#1a1d22');  // grip
+      addBox(armG, 0.05, 0.07, 0.05, 0, hy - 0.04, 0.18, '#15181d');  // trigger guard
       break;
+    case 'staff': {
+      // A slender wand: thin shaft topped with a glowing crystal orb + prongs.
+      addBox(armG, 0.035, 0.035, 0.62, 0, hy, 0.30, WOOD);
+      const orb = addBox(armG, 0.14, 0.14, 0.14, 0, hy, 0.66, '#c98bff'); // crystal
+      orb.material = new THREE.MeshBasicMaterial({ color: 0xc98bff });
+      addBox(armG, 0.03, 0.16, 0.03, -0.08, hy, 0.62, c);       // claw prongs
+      addBox(armG, 0.03, 0.16, 0.03, 0.08, hy, 0.62, c);
+      break;
+    }
   }
 }
 
@@ -309,10 +360,10 @@ export function buildCharacter(appearance, equipment) {
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-// Pose the limbs/head. `opts`: { phase, moving, swing (0..1), pitch }.
+// Pose the limbs/head. `opts`: { phase, moving, swing (0..1), pitch, headYaw }.
 export function animateCharacter(parts, opts) {
   if (!parts) return;
-  const { phase = 0, moving = false, swing = 0, pitch = 0 } = opts;
+  const { phase = 0, moving = false, swing = 0, pitch = 0, headYaw = 0 } = opts;
   const amp = moving ? 0.6 : 0;
   const s = Math.sin(phase);
   parts.leftLeg.rotation.x = s * amp;
@@ -320,5 +371,8 @@ export function animateCharacter(parts, opts) {
   parts.leftArm.rotation.x = -s * amp * 0.8;
   // Right arm swings with the walk, or does a big overhead strike while attacking.
   parts.rightArm.rotation.x = swing > 0 ? -Math.sin(clamp(swing, 0, 1) * Math.PI) * 2.2 : s * amp * 0.8;
-  parts.head.rotation.x = clamp(pitch, -0.9, 0.9) * 0.7;
+  // Head tracks the look direction: pitch tilts up/down, headYaw turns it side
+  // to side relative to the body (so turning the view turns the head).
+  parts.head.rotation.x = clamp(pitch, -0.9, 0.9) * -0.7;
+  parts.head.rotation.y = clamp(headYaw, -1.2, 1.2);
 }

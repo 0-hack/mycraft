@@ -195,7 +195,7 @@ export class Player {
 
   // Authoritative health/dead state pushed by the server.
   setHealth(health, dead) {
-    this.health = Math.max(0, Math.min(20, health));
+    this.health = Math.max(0, Math.min(this.maxHealth || 20, health));
     this.dead = !!dead;
   }
 

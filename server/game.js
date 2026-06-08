@@ -7,7 +7,7 @@ import { CONFIG } from './config.js';
 import { verifyToken } from './auth.js';
 import { stateQueries, groundQueries, userQueries } from './db.js';
 import { getSettings, clientTuning } from './settings.js';
-import { getAllEdits, setBlock } from './world.js';
+import { getAllEdits, setBlock, getEditBlock, isSolidEditType } from './world.js';
 import {
   weaponStats, equippedWeapon, defenseOf, mitigate, upgradeCost,
   normalizeEquipment, defaultEquipment, classEquipment, WEAPONS, ARMOR, MAX_LEVEL,
@@ -146,6 +146,7 @@ export function attachGame(server) {
       const v = computeCanFly(ctx);
       ctx.canFly = v;
       send(ctx.ws, { type: 'canFly', value: v });
+      broadcast({ type: 'playerFly', id: ctx.netId, value: v }, ctx.ws); // others render wings
     }
   }
 
@@ -156,6 +157,7 @@ export function attachGame(server) {
       yaw: c.state.yaw, pitch: c.state.pitch,
       appearance: safeParse(c.state.appearance, null),
       equipment: normalizeEquipment(safeParse(c.state.equipment, null)),
+      canFly: !!c.canFly, dead: !!c.dead,
     }));
   }
 
@@ -221,7 +223,8 @@ export function attachGame(server) {
           player: { id: ctx.netId, name: payload.username,
             x: state.x, y: state.y, z: state.z, yaw: state.yaw, pitch: state.pitch,
             appearance: safeParse(state.appearance, null),
-            equipment: normalizeEquipment(safeParse(state.equipment, null)) },
+            equipment: normalizeEquipment(safeParse(state.equipment, null)),
+            canFly: !!ctx.canFly, dead: !!ctx.dead },
         }, ws);
         for (let i = 0; i < 3; i++) spawnPickup();
         return;
@@ -375,6 +378,8 @@ export function attachGame(server) {
           ctx.invulnUntil = Date.now() + getSettings().spawnProtectSec * 1000; // protection on respawn
           send(ws, { type: 'respawn', x: s.x, y: s.y, z: s.z });
           send(ws, { type: 'stats', state: publicState(s) });
+          broadcast({ type: 'playerDead', id: ctx.netId, dead: false }, ws); // others stand them back up
+          broadcast({ type: 'playerMove', id: ctx.netId, x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch }, ws);
           break;
         }
         case 'setSpawn': {
@@ -442,17 +447,24 @@ export function attachGame(server) {
       const w = equippedWeapon(safeParse(s.equipment, null));
       s.score += 5 + (w.mine || 0);
       gainXp(ctx, 3);
-      // Collect the mined material into the player's inventory.
+      // Collect the mined block into the player's stash, capped per type so it
+      // isn't an infinite supply — players must keep mining to keep building.
       const mt = msg.mt;
       if (CONFIG.MATERIAL_PRICES[mt]) {
+        const cap = getSettings().brickCap;
         const inv = safeParse(s.inventory, {});
-        inv[mt] = (inv[mt] || 0) + 1;
+        inv[mt] = Math.min(cap, (inv[mt] || 0) + 1);
         s.inventory = JSON.stringify(inv);
       }
       broadcast({ type: 'block', x, y, z, t: 0 });
     } else if (action === 'place') {
       const t = msg.t;
       if (!PLACEABLE.has(t)) return;
+      // Placing consumes one block of that type from the player's stash.
+      const inv = safeParse(s.inventory, {});
+      if (!(inv[t] > 0)) { send(ws, { type: 'placeDenied', x, y, z }); send(ws, { type: 'stats', state: publicState(s) }); return; }
+      inv[t] -= 1; if (!inv[t]) delete inv[t];
+      s.inventory = JSON.stringify(inv);
       setBlock(x, y, z, t);
       s.blocks_placed += 1;
       s.score += 1;
@@ -643,6 +655,7 @@ export function attachGame(server) {
     ts.health = Math.max(0, ts.health - dmg);
     target.dead = ts.health <= 0;
     pushHealth(target, { hit: true, by: attacker?.user.username, dmg: Math.round(dmg), fx });
+    broadcast({ type: 'playerHurt', id: target.netId }, target.ws); // others show a pain face
     if (target.dead) handleDeath(target, attacker, cause);
   }
 
@@ -653,6 +666,7 @@ export function attachGame(server) {
   }
 
   function handleDeath(target, attacker, cause) {
+    broadcast({ type: 'playerDead', id: target.netId, dead: true }); // others lay the avatar down
     dropLoot(target);
     let text;
     if (attacker && attacker !== target) {
@@ -781,6 +795,24 @@ export function attachGame(server) {
     return codes.length ? codes : undefined;
   }
 
+  // The boss's slam shatters player-built blocks in a vertical column around the
+  // impact, so it can break open walls players hide behind.
+  function smashBlocks(cx, cy, cz, radius) {
+    const r = Math.ceil(radius);
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        if (dx * dx + dz * dz > radius * radius) continue;
+        const bx = Math.floor(cx) + dx, bz = Math.floor(cz) + dz;
+        for (let by = Math.floor(cy); by <= Math.floor(cy) + 3; by++) {
+          if (isSolidEditType(getEditBlock(bx, by, bz))) {
+            setBlock(bx, by, bz, 0);
+            broadcast({ type: 'block', x: bx, y: by, z: bz, t: 0 });
+          }
+        }
+      }
+    }
+  }
+
   function mobTick(dt) {
     if (!mobs.size) return;
     const cfg = getSettings();
@@ -830,6 +862,7 @@ export function attachGame(server) {
           if (now >= m.tele.until) {                       // detonate
             const tl = m.tele; m.tele = null;
             broadcast({ type: 'bossSlam', x: tl.x, y: tl.y, z: tl.z, radius: tl.radius });
+            smashBlocks(tl.x, tl.y, tl.z, Math.min(tl.radius, 4)); // boss breaks open walls
             for (const c of players) {
               if (c.dead) continue;
               if (Math.hypot(c.state.x - tl.x, c.state.z - tl.z) > tl.radius) continue;
@@ -855,8 +888,12 @@ export function attachGame(server) {
       m.yaw = Math.atan2(dx, dz);
       if (dist > def.reach * 0.8) {
         const step = Math.min(dist, def.speed * (1 - slow) * dt);
-        m.x = round1(m.x + dx / (dist || 1) * step);
-        m.z = round1(m.z + dz / (dist || 1) * step);
+        const nx = round1(m.x + dx / (dist || 1) * step);
+        const nz = round1(m.z + dz / (dist || 1) * step);
+        // Monsters can't walk through player-built walls/bricks (axis-separated
+        // so they can slide along them). The boss smashes through via its slam.
+        if (!mobBlocked(nx, m.z, m.y)) m.x = nx;
+        if (!mobBlocked(m.x, nz, m.y)) m.z = nz;
       }
       m.y = round1(m.y + (tgt.state.y - m.y) * Math.min(1, dt * 4));
       if (dist <= def.reach && now - m.lastAttack > 1200) {
@@ -1013,7 +1050,11 @@ export function attachGame(server) {
     setWings(userId, on) {
       userQueries.setWings.run(on ? 1 : 0, userId);
       const c = findByUserId(userId);
-      if (c) { c.canFly = computeCanFly(c); send(c.ws, { type: 'canFly', value: c.canFly }); }
+      if (c) {
+        c.canFly = computeCanFly(c);
+        send(c.ws, { type: 'canFly', value: c.canFly });
+        broadcast({ type: 'playerFly', id: c.netId, value: c.canFly }, c.ws);
+      }
     },
     setBanned(userId, banned) {
       userQueries.setBanned.run(banned ? 1 : 0, userId);
@@ -1058,6 +1099,15 @@ function safeParse(str, fallback) {
   try { return JSON.parse(str); } catch { return fallback; }
 }
 
+// Whether a player-built solid block blocks a monster standing at (x,z). Checks
+// the two cells the body occupies vertically so walls of any reasonable height
+// stop them.
+function mobBlocked(x, z, y) {
+  const bx = Math.floor(x), bz = Math.floor(z), by = Math.floor(y);
+  return isSolidEditType(getEditBlock(bx, by, bz)) ||
+    isSolidEditType(getEditBlock(bx, by + 1, bz));
+}
+
 // Idle drifting for passive / de-aggroed monsters so they feel alive.
 function wanderMob(m, dt) {
   const now = Date.now();
@@ -1068,8 +1118,12 @@ function wanderMob(m, dt) {
   }
   if (m.wMove) {
     const sp = 0.7;
-    m.x = round1(m.x + Math.sin(m.wYaw) * sp * dt);
-    m.z = round1(m.z + Math.cos(m.wYaw) * sp * dt);
+    const nx = round1(m.x + Math.sin(m.wYaw) * sp * dt);
+    const nz = round1(m.z + Math.cos(m.wYaw) * sp * dt);
+    if (!mobBlocked(nx, m.z, m.y)) m.x = nx;
+    else m.wUntil = 0; // hit a wall: pick a new heading next tick
+    if (!mobBlocked(m.x, nz, m.y)) m.z = nz;
+    else m.wUntil = 0;
     m.yaw = m.wYaw;
   }
 }

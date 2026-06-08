@@ -6,6 +6,13 @@ const PERIOD = 16;            // city grid period (must match world.js)
 const ROAD = 4;               // road width in blocks
 const FOOT0 = 6, FOOT1 = 13;  // building footprint (8x8) within a cell
 
+// Stable bright colour per player name (distinct hues on the minimap).
+function playerColor(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return `hsl(${h}, 80%, 62%)`;
+}
+
 export class Minimap {
   constructor() {
     this.canvas = document.getElementById('minimap');
@@ -78,7 +85,8 @@ export class Minimap {
       }
     }
 
-    // Other players. World x → right, world z → down (so −z is "up"/north).
+    // Other players, each a distinct colour derived from their name so they're
+    // easy to tell apart. World x → right, world z → down (so −z is "up"/north).
     for (const r of remotes.values()) {
       let dx = (r.group.position.x - player.pos.x) * scale;
       let dy = (r.group.position.z - player.pos.z) * scale;
@@ -86,15 +94,19 @@ export class Minimap {
       let onEdge = false;
       if (d > R - 6) { const k = (R - 6) / (d || 1); dx *= k; dy *= k; onEdge = true; }
       const px = cx + dx, py = cy + dy;
+      const color = playerColor(r.name || '');
       ctx.beginPath();
-      ctx.arc(px, py, onEdge ? 3 : 4, 0, Math.PI * 2);
-      ctx.fillStyle = onEdge ? '#f4d35e' : '#5fd0ff';
+      ctx.arc(px, py, onEdge ? 3 : 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = color;
       ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.stroke();
       if (!onEdge && r.name) {
-        ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        ctx.font = '9px sans-serif';
+        ctx.fillStyle = color;
+        ctx.font = 'bold 9px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(r.name.slice(0, 8), px, py - 6);
+        ctx.fillText(r.name.slice(0, 8), px, py - 7);
       }
     }
 

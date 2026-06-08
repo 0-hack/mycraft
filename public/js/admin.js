@@ -60,6 +60,7 @@ function fillSettings(s) {
   $('s-mobInterval').value = Math.round(s.mobIntervalMs / 1000);
   $('s-mobPower').value = s.mobPower;
   $('s-chatInterval').value = (s.chatMinIntervalMs / 1000);
+  $('s-brickCap').value = s.brickCap;
   $('s-medkit').checked = !!s.medkitEnabled;
   $('s-food').checked = !!s.foodEnabled;
   $('s-mob').checked = !!s.mobEnabled;
@@ -87,6 +88,7 @@ $('s-save').onclick = async () => {
     mobIntervalMs: Number($('s-mobInterval').value) * 1000,
     mobPower: Number($('s-mobPower').value),
     chatMinIntervalMs: Math.round(Number($('s-chatInterval').value) * 1000),
+    brickCap: Number($('s-brickCap').value),
     medkitEnabled: $('s-medkit').checked ? 1 : 0,
     foodEnabled: $('s-food').checked ? 1 : 0,
     mobEnabled: $('s-mob').checked ? 1 : 0,
