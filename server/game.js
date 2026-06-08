@@ -111,6 +111,19 @@ export function attachGame(server) {
       if (ws !== except && ws.readyState === 1) ws.send(msg);
     }
   }
+  // Send only to players within `radius` blocks (horizontally) of (x,z). Used for
+  // transient, local effects (e.g. block cracks) so we don't spam the whole
+  // server with things only nearby players can see.
+  function broadcastNear(x, z, radius, obj, except) {
+    const r2 = radius * radius;
+    const msg = JSON.stringify(obj);
+    for (const [ws, c] of clients) {
+      if (ws === except || ws.readyState !== 1) continue;
+      const dx = c.state.x - x, dz = c.state.z - z;
+      if (dx * dx + dz * dz <= r2) ws.send(msg);
+    }
+  }
+  const CRACK_RADIUS = 48; // only players this close see a block's cracks
   function send(ws, obj) {
     if (ws.readyState === 1) ws.send(JSON.stringify(obj));
   }
@@ -237,9 +250,12 @@ export function attachGame(server) {
           pickups: [...pickups.values()],
           ground: [...ground.values()].map(groundPublic),
           mobs: [...mobs.values()].map(mobPublic),
-          cracks: [...blockDamage].map(([key, e]) => {
-            const [x, y, z] = key.split(',').map(Number); return { x, y, z, stage: e.stage };
-          }),
+          cracks: [...blockDamage].reduce((out, [key, e]) => {
+            const [x, y, z] = key.split(',').map(Number);
+            const dx = x - state.x, dz = z - state.z;
+            if (dx * dx + dz * dz <= CRACK_RADIUS * CRACK_RADIUS) out.push({ x, y, z, stage: e.stage });
+            return out;
+          }, []),
         });
         broadcast({
           type: 'playerJoin',
@@ -526,8 +542,8 @@ export function attachGame(server) {
     if (e.dmg >= max) {
       blockDamage.delete(k);
       setBlock(x, y, z, 0);
-      broadcast({ type: 'block', x, y, z, t: 0 });
-      broadcast({ type: 'crack', x, y, z, stage: -1, broke: true });
+      broadcast({ type: 'block', x, y, z, t: 0 }); // world edit: everyone (consistency)
+      broadcastNear(x, z, CRACK_RADIUS, { type: 'crack', x, y, z, stage: -1, broke: true });
       s.blocks_mined += 1;
       s.score += 5 + (w.mine || 0);
       gainXp(ctx, 3);
@@ -540,26 +556,25 @@ export function attachGame(server) {
       send(ws, { type: 'stats', state: publicState(s) });
     } else {
       const stage = Math.min(CRACK_STAGES - 1, Math.floor((e.dmg / max) * CRACK_STAGES));
-      if (stage !== e.stage) { e.stage = stage; broadcast({ type: 'crack', x, y, z, stage }); }
+      if (stage !== e.stage) { e.stage = stage; broadcastNear(x, z, CRACK_RADIUS, { type: 'crack', x, y, z, stage }); }
     }
   }
 
-  // Idle blocks slowly recover and their cracks fade (broadcast to everyone).
+  // Idle blocks slowly recover and their cracks fade (only nearby players care).
   setInterval(() => {
     const now = Date.now();
     for (const [k, e] of blockDamage) {
       if (now - e.t < 6000) continue;
       e.dmg -= e.max * 0.4;             // heal a chunk every tick once left alone
+      const [x, y, z] = k.split(',').map(Number);
       if (e.dmg <= 0) {
         blockDamage.delete(k);
-        const [x, y, z] = k.split(',').map(Number);
-        broadcast({ type: 'crack', x, y, z, stage: -1 });
+        broadcastNear(x, z, CRACK_RADIUS, { type: 'crack', x, y, z, stage: -1 });
       } else {
         const stage = Math.min(CRACK_STAGES - 1, Math.floor((e.dmg / e.max) * CRACK_STAGES));
         if (stage !== e.stage) {
           e.stage = stage;
-          const [x, y, z] = k.split(',').map(Number);
-          broadcast({ type: 'crack', x, y, z, stage });
+          broadcastNear(x, z, CRACK_RADIUS, { type: 'crack', x, y, z, stage });
         }
       }
     }

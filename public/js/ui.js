@@ -441,13 +441,27 @@ export class UI {
   }
   primeAchievements(list) { (list || []).forEach((id) => this.unlocked.add(id)); }
 
+  // Show a transient notification. Repeating the same message (e.g. spamming an
+  // action that fails) is throttled: instead of stacking duplicates we just keep
+  // the existing one alive, so the HUD doesn't get noisy.
   toast(text) {
+    const now = performance.now();
+    const last = this._toastLast;
+    if (last && last.text === text && now - last.time < 3000 && last.el && last.el.isConnected) {
+      last.time = now;                 // refresh its lifetime and skip the duplicate
+      clearTimeout(last.hideT);
+      last.hideT = setTimeout(() => { last.el.classList.remove('show'); setTimeout(() => last.el.remove(), 400); }, 3500);
+      return;
+    }
     const t = document.createElement('div');
     t.className = 'toast';
     t.textContent = text;
-    this.el('toasts').appendChild(t);
+    const toasts = this.el('toasts');
+    toasts.appendChild(t);
+    while (toasts.children.length > 4) toasts.removeChild(toasts.firstChild); // cap on-screen toasts
     setTimeout(() => t.classList.add('show'), 10);
-    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 400); }, 3500);
+    const hideT = setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 400); }, 3500);
+    this._toastLast = { text, time: now, el: t, hideT };
   }
 
   // ---- Chat ----
