@@ -293,11 +293,14 @@ export function attachGame(server) {
           const s = ctx.state;
           const base = w.dmg * damageMult(prog, w.cat) * buffMult(ctx, 'dmg', 1);
           const rolled = critize(prog, base);
+          const eyeY = s.y + 1.6; // shooter's eye
           if (msg.targetType === 'mob') {
             const m = mobs.get(msg.target);
             if (!m) break;
             if (Math.abs(m.y - s.y) > VERT_LIMIT) break; // can't hit across a big height gap
             if (Math.hypot(m.x - s.x, m.y - s.y, m.z - s.z) > w.reach + REACH_SLACK) break;
+            const mh = (MOB_TYPES[m.type] || MOB_TYPES.slime).height;
+            if (losBlocked(s.x, eyeY, s.z, m.x, m.y + mh * 0.6, m.z)) break; // no hitting through walls
             hurtMob(m, Math.round(rolled.dmg), ctx, rolled.crit ? 'crit' : 'hit');
             break;
           }
@@ -308,6 +311,7 @@ export function attachGame(server) {
           if (Math.abs(ts.y - s.y) > VERT_LIMIT) break; // only same-level players can be hit
           const dist = Math.hypot(ts.x - s.x, ts.y - s.y, ts.z - s.z);
           if (dist > w.reach + REACH_SLACK) break;
+          if (losBlocked(s.x, eyeY, s.z, ts.x, ts.y + 1.0, ts.z)) break; // no hitting through walls
           const def = defenseOf(safeParse(ts.equipment, null)) + defenseBonus(safeParse(ts.progress, null)) + buffMult(target, 'def', 0);
           applyDamage(target, mitigate(rolled.dmg, def), ctx, 'combat', rolled.crit ? 'crit' : undefined);
           break;
@@ -630,12 +634,16 @@ export function attachGame(server) {
     const basePower = val * damageMult(p, skill.cat) * buffMult(ctx, 'dmg', 1) * cfg.skillDmgMult;
     if (skill.kind === 'nuke') {
       const r = critize(p, basePower); const fx = r.crit ? 'crit' : 'skill'; const power = Math.round(r.dmg);
+      const eyeY = s.y + 1.6;
       if (msg.targetType === 'mob') {
         const m = mobs.get(msg.target);
-        if (m && Math.abs(m.y - s.y) <= VERT_LIMIT && dist3(s, m) <= nukeRange) { applyStatuses(m.effects, skill.status, lvl, ctx.netId); hurtMob(m, power, ctx, fx); }
+        const mh = m ? (MOB_TYPES[m.type] || MOB_TYPES.slime).height : 1;
+        if (m && Math.abs(m.y - s.y) <= VERT_LIMIT && dist3(s, m) <= nukeRange &&
+            !losBlocked(s.x, eyeY, s.z, m.x, m.y + mh * 0.6, m.z)) { applyStatuses(m.effects, skill.status, lvl, ctx.netId); hurtMob(m, power, ctx, fx); }
       } else {
         let t = null; for (const c of clients.values()) if (c.netId === msg.target) t = c;
-        if (t && t !== ctx && !t.dead && Math.abs(t.state.y - s.y) <= VERT_LIMIT && dist3(s, t.state) <= nukeRange) {
+        if (t && t !== ctx && !t.dead && Math.abs(t.state.y - s.y) <= VERT_LIMIT && dist3(s, t.state) <= nukeRange &&
+            !losBlocked(s.x, eyeY, s.z, t.state.x, t.state.y + 1.0, t.state.z)) {
           const def = defenseOf(safeParse(t.state.equipment, null)) + defenseBonus(safeParse(t.state.progress, null)) + buffMult(t, 'def', 0);
           applyPlayerStatus(t, skill.status, lvl, ctx.netId);
           applyDamage(t, mitigate(power, def), ctx, 'combat', r.crit ? 'crit' : undefined);
@@ -1131,6 +1139,33 @@ function materialCount(materials) {
 function safeParse(str, fallback) {
   if (typeof str !== 'string') return str || fallback;
   try { return JSON.parse(str); } catch { return fallback; }
+}
+
+// Is the line from (ax,ay,az) to (bx,by,bz) blocked by a solid block before it
+// reaches the target's cell? Used so players can't shoot/hit through walls.
+function losBlocked(ax, ay, az, bx, by, bz) {
+  const dirx = bx - ax, diry = by - ay, dirz = bz - az;
+  const len = Math.hypot(dirx, diry, dirz);
+  if (len < 0.001) return false;
+  const dx = dirx / len, dy = diry / len, dz = dirz / len;
+  let x = Math.floor(ax), y = Math.floor(ay), z = Math.floor(az);
+  const tgX = Math.floor(bx), tgY = Math.floor(by), tgZ = Math.floor(bz);
+  const stepX = Math.sign(dx), stepY = Math.sign(dy), stepZ = Math.sign(dz);
+  const tDX = dx === 0 ? Infinity : Math.abs(1 / dx);
+  const tDY = dy === 0 ? Infinity : Math.abs(1 / dy);
+  const tDZ = dz === 0 ? Infinity : Math.abs(1 / dz);
+  let tMX = dx === 0 ? Infinity : ((stepX > 0 ? x + 1 - ax : ax - x) * tDX);
+  let tMY = dy === 0 ? Infinity : ((stepY > 0 ? y + 1 - ay : ay - y) * tDY);
+  let tMZ = dz === 0 ? Infinity : ((stepZ > 0 ? z + 1 - az : az - z) * tDZ);
+  let guard = 0;
+  while (guard++ < 256) {
+    if (tMX < tMY && tMX < tMZ) { x += stepX; if (tMX > len) return false; tMX += tDX; }
+    else if (tMY < tMZ) { y += stepY; if (tMY > len) return false; tMY += tDY; }
+    else { z += stepZ; if (tMZ > len) return false; tMZ += tDZ; }
+    if (x === tgX && y === tgY && z === tgZ) return false;
+    if (isSolidAt(x, y, z)) return true;
+  }
+  return false;
 }
 
 // Whether something solid (a procedural building/wall or a player-placed block)

@@ -41,6 +41,7 @@ for (const ev of ['pointerdown', 'keydown', 'touchstart']) {
   addEventListener(ev, () => { audio.resume(); audio.startMusic(); }, { once: true });
 }
 let world, player, renderer, scene, camera, highlight;
+let breakOverlay = null, breakMat = null, crackTextures = null;
 let selfId = null, username = null;
 let dayLength = 1200000, serverTimeOffset = 0;
 const remotePlayers = new Map(); // netId -> { group, target }
@@ -116,6 +117,43 @@ function setupThree() {
     new THREE.EdgesGeometry(hl),
     new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4 }));
   highlight.visible = false;
+
+  // Block-breaking crack overlay: a cube of crack textures (Minecraft-style)
+  // that intensifies through stages as you mine the targeted block.
+  crackTextures = makeCrackTextures(8);
+  breakMat = new THREE.MeshBasicMaterial({
+    transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, opacity: 0.95,
+  });
+  breakOverlay = new THREE.Mesh(new THREE.BoxGeometry(1.008, 1.008, 1.008), breakMat);
+  breakOverlay.visible = false;
+  breakOverlay.renderOrder = 2;
+}
+
+// Procedurally drawn crack stages (transparent PNG-like canvases): more and
+// longer cracks as the stage rises.
+function makeCrackTextures(stages) {
+  const texs = [];
+  for (let s = 0; s < stages; s++) {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const x = c.getContext('2d');
+    x.clearRect(0, 0, 64, 64);
+    x.strokeStyle = 'rgba(0,0,0,0.8)'; x.lineCap = 'round';
+    let seed = 9301 + s * 233;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const n = 1 + s; // crack count grows with stage
+    for (let i = 0; i < n; i++) {
+      x.lineWidth = 1 + (s > 4 ? 1 : 0);
+      let px = 20 + rnd() * 24, py = 20 + rnd() * 24;
+      x.beginPath(); x.moveTo(px, py);
+      const segs = 2 + ((rnd() * 3) | 0);
+      for (let j = 0; j < segs; j++) { px += (rnd() - 0.5) * 34; py += (rnd() - 0.5) * 34; x.lineTo(px, py); }
+      x.stroke();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.magFilter = THREE.NearestFilter;
+    texs.push(tex);
+  }
+  return texs;
 }
 
 function setupNetwork() {
@@ -134,6 +172,7 @@ function setupNetwork() {
     world.loadEdits(msg.edits);
     minimap.world = world; // lets the minimap render the actual city layout
     scene.add(highlight);
+    if (breakOverlay) scene.add(breakOverlay);
 
     const spawn = (msg.state && Number.isFinite(msg.state.x))
       ? { x: msg.state.x, y: msg.state.y, z: msg.state.z } : SPAWN;
@@ -995,30 +1034,46 @@ function primaryUp() {
   mineState.key = null;
   mineState.progress = 0;
   setMineBar(0);
+  hideCrack();
 }
 
 function updateMining(dt) {
-  if (!mineState.active || !player || player.dead || ui.anyMenuOpen()) { if (!mineState.active) setMineBar(0); return; }
+  if (!mineState.active || !player || player.dead || ui.anyMenuOpen()) { if (!mineState.active) { setMineBar(0); hideCrack(); } return; }
   // Keep the hand chopping while held.
   mineState.swingT = (mineState.swingT || 0) - dt;
   if (mineState.swingT <= 0) { ownSwing = 1; mineState.swingT = 0.45; }
   const r = player.raycast();
-  if (!r) { mineState.key = null; mineState.progress = 0; setMineBar(0); return; }
+  if (!r) { mineState.key = null; mineState.progress = 0; setMineBar(0); hideCrack(); return; }
   const t = world.getBlock(r.hit.x, r.hit.y, r.hit.z);
-  if (t === B.AIR || t === B.BEDROCK) { mineState.progress = 0; setMineBar(0); return; }
+  if (t === B.AIR || t === B.BEDROCK) { mineState.progress = 0; setMineBar(0); hideCrack(); return; }
   const key = `${r.hit.x},${r.hit.y},${r.hit.z}`;
   if (key !== mineState.key) { mineState.key = key; mineState.progress = 0; }
   const w = equippedWeapon(myEquipment);
-  const toolFactor = 1 + (w.mine || 0) * 0.4;            // pickaxe/axe mine faster
+  // Mining speed: weapon's mining power (axe good, gun/wand weak) × strength.
+  const toolFactor = 1 + (w.mine || 0) * 0.4;
   const time = blockHardness(t) / (toolFactor * miningMult(myProgress));
   mineState.progress += dt;
-  setMineBar(Math.min(1, mineState.progress / time));
+  const frac = Math.min(1, mineState.progress / time);
+  setMineBar(frac);
+  showCrack(r.hit, frac);
   if (mineState.progress >= time) {
     breakBlock(r);
     mineState.progress = 0;
     mineState.key = null;
+    hideCrack();
   }
 }
+
+// Show the crack overlay on the targeted block, picking the stage from progress.
+function showCrack(hit, frac) {
+  if (!breakOverlay || !crackTextures) return;
+  const stages = crackTextures.length;
+  const stage = Math.min(stages - 1, Math.floor(frac * stages));
+  if (breakMat.map !== crackTextures[stage]) { breakMat.map = crackTextures[stage]; breakMat.needsUpdate = true; }
+  breakOverlay.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+  breakOverlay.visible = frac > 0.001;
+}
+function hideCrack() { if (breakOverlay) breakOverlay.visible = false; }
 
 function setMineBar(frac) {
   const el = document.getElementById('mine-bar');
@@ -1040,6 +1095,8 @@ function findTarget(w) {
     const dist = Math.hypot(dx, dy, dz);
     if (dist > reach || dist < 0.001) return;
     if ((dx * _fwd.x + dy * _fwd.y + dz * _fwd.z) / dist < minDot) return;
+    // No shooting/striking through walls: a solid block between us blocks it.
+    if (losBlocked(camera.position, cx, cy, cz)) return;
     if (dist < bestDist) { bestDist = dist; best = { id, kind, dist, point: new THREE.Vector3(cx, cy, cz) }; }
   };
   for (const [id, r] of remotePlayers) consider(id, 'player', r.group.position.x, r.group.position.y + 1.0, r.group.position.z);
@@ -1048,6 +1105,33 @@ function findTarget(w) {
     consider(id, 'mob', e.group.position.x, e.group.position.y + h * 0.6, e.group.position.z);
   }
   return best;
+}
+
+// Is the straight line from `from` to (tx,ty,tz) blocked by a solid block before
+// it reaches the target's cell? DDA voxel traversal (line of sight for shots).
+function losBlocked(from, tx, ty, tz) {
+  const dirx = tx - from.x, diry = ty - from.y, dirz = tz - from.z;
+  const len = Math.hypot(dirx, diry, dirz);
+  if (len < 0.001) return false;
+  const dx = dirx / len, dy = diry / len, dz = dirz / len;
+  let x = Math.floor(from.x), y = Math.floor(from.y), z = Math.floor(from.z);
+  const tgX = Math.floor(tx), tgY = Math.floor(ty), tgZ = Math.floor(tz);
+  const stepX = Math.sign(dx), stepY = Math.sign(dy), stepZ = Math.sign(dz);
+  const tDX = dx === 0 ? Infinity : Math.abs(1 / dx);
+  const tDY = dy === 0 ? Infinity : Math.abs(1 / dy);
+  const tDZ = dz === 0 ? Infinity : Math.abs(1 / dz);
+  let tMX = dx === 0 ? Infinity : ((stepX > 0 ? x + 1 - from.x : from.x - x) * tDX);
+  let tMY = dy === 0 ? Infinity : ((stepY > 0 ? y + 1 - from.y : from.y - y) * tDY);
+  let tMZ = dz === 0 ? Infinity : ((stepZ > 0 ? z + 1 - from.z : from.z - z) * tDZ);
+  let guard = 0;
+  while (guard++ < 256) {
+    if (tMX < tMY && tMX < tMZ) { x += stepX; if (tMX > len) return false; tMX += tDX; }
+    else if (tMY < tMZ) { y += stepY; if (tMY > len) return false; tMY += tDY; }
+    else { z += stepZ; if (tMZ > len) return false; tMZ += tDZ; }
+    if (x === tgX && y === tgY && z === tgZ) return false; // reached the target cell
+    if (isSolid(world.getBlock(x, y, z))) return true;     // wall in the way
+  }
+  return false;
 }
 
 // Brief tracer line for ranged/magic shots.
