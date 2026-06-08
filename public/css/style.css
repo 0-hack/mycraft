@@ -1,0 +1,360 @@
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0e1a;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #fff; user-select: none; touch-action: none; }
+.hidden { display: none !important; }
+#game, #game canvas { position: fixed; inset: 0; display: block; }
+
+/* ---------------- Auth ---------------- */
+#auth { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 30%, #1b2a4a, #0a0e1a); z-index: 50; padding: 20px; }
+.auth-card { background: rgba(15, 22, 40, 0.92); border: 1px solid #2c3e63;
+  border-radius: 16px; padding: 28px; width: 100%; max-width: 360px; text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+.auth-card h1 { font-size: 34px; margin-bottom: 4px; }
+.tagline { color: #9fb3d6; margin-bottom: 20px; font-size: 14px; }
+.auth-card input { width: 100%; padding: 12px 14px; margin-bottom: 12px; border-radius: 10px;
+  border: 1px solid #2c3e63; background: #0c1326; color: #fff; font-size: 16px; }
+.auth-buttons { display: flex; gap: 10px; }
+.auth-card button { flex: 1; padding: 12px; border: none; border-radius: 10px; cursor: pointer;
+  font-size: 15px; font-weight: 600; background: #3a7bd5; color: #fff; }
+.auth-card button.secondary { background: #2c3e63; }
+.auth-card button:active { transform: translateY(1px); }
+#auth-msg { min-height: 20px; margin-top: 12px; font-size: 14px; }
+#auth-msg.err { color: #ff8080; }
+#auth-msg.ok { color: #7fe3a0; }
+.hint { color: #6a7da0; font-size: 12px; margin-top: 14px; }
+
+/* ---------------- HUD ---------------- */
+#crosshair { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 26px; color: rgba(255,255,255,0.7); text-shadow: 0 0 3px #000;
+  pointer-events: none; z-index: 5; }
+
+#minimap { position: fixed; top: 8px; right: 8px; width: 84px; height: 84px;
+  z-index: 9; pointer-events: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.4)); }
+body.touch #minimap { width: 66px; height: 66px; }
+
+/* Auto target bracket that snaps onto the block or monster you're aiming at. */
+#target-bracket { position: fixed; width: 46px; height: 46px; transform: translate(-50%, -50%);
+  z-index: 6; pointer-events: none; color: #ffffff; }
+#target-bracket.attack { color: #ff5a5a; }
+#target-bracket.build { color: #7fe3a0; }
+#target-bracket i { position: absolute; width: 11px; height: 11px; border: 2px solid currentColor; }
+#target-bracket i:nth-child(1) { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+#target-bracket i:nth-child(2) { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+#target-bracket i:nth-child(3) { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+#target-bracket i:nth-child(4) { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+
+/* Mining-progress bar under the crosshair. */
+#mine-bar { position: fixed; top: calc(50% + 22px); left: 50%; transform: translateX(-50%);
+  width: 110px; height: 7px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 4px; overflow: hidden; z-index: 6; opacity: 0; transition: opacity 0.1s;
+  pointer-events: none; }
+#mine-bar > div { height: 100%; width: 0%; background: linear-gradient(90deg, #f4d35e, #ff8c42); }
+
+/* Boss alert banner + health bar. */
+#boss-banner { position: fixed; top: 38%; left: 50%; transform: translateX(-50%);
+  z-index: 22; pointer-events: none; text-align: center; font-weight: 800; font-size: 30px;
+  color: #ffd0d0; text-shadow: 0 2px 10px #000, 0 0 20px #b23a3a;
+  animation: bossIn 0.5s ease-out; white-space: nowrap; }
+@keyframes bossIn { from { opacity: 0; transform: translate(-50%, 12px) scale(0.9); } to { opacity: 1; } }
+#boss-bar { position: fixed; top: 76px; left: 50%; transform: translateX(-50%);
+  width: min(540px, 84vw); z-index: 12; text-align: center; pointer-events: none; }
+#boss-name { font-size: 13px; font-weight: 700; color: #ffd0d0; text-shadow: 0 1px 3px #000; letter-spacing: 1px; }
+.bossbar-track { height: 14px; margin-top: 3px; background: rgba(0,0,0,0.55); border-radius: 7px;
+  overflow: hidden; border: 1px solid rgba(255,255,255,0.25); }
+#boss-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #8a2db0, #d54a4a);
+  transition: width 0.2s; }
+
+/* Floating combat numbers for the player (mob numbers float in 3D). */
+#floats { position: fixed; inset: 0; z-index: 7; pointer-events: none; }
+.float { position: absolute; top: 46%; transform: translateX(-50%); font-weight: 800; font-size: 22px;
+  text-shadow: 0 2px 3px rgba(0,0,0,0.8); animation: floatUp 0.8s ease-out forwards; }
+@keyframes floatUp { from { opacity: 1; } to { opacity: 0; transform: translate(-50%, -42px); } }
+
+/* Top bar (player/level/etc) on the left; minimap + vitals on the right. */
+#topbar { position: fixed; top: env(safe-area-inset-top, 8px); left: 8px; right: 250px;
+  display: flex; gap: 6px; flex-wrap: wrap; z-index: 10; }
+body.touch #topbar { right: 196px; }
+.pill { background: rgba(10,16,30,0.6); border: 1px solid rgba(255,255,255,0.12);
+  padding: 5px 10px; border-radius: 20px; font-size: 13px; backdrop-filter: blur(4px); }
+.pill.btn { cursor: pointer; color: #fff; }
+.pill.btn:active { background: rgba(58,123,213,0.6); }
+body.touch #btn-view2 { display: none; } /* mobile uses the on-screen 👁 button */
+
+/* Health + food bars, beside (left of) the top-right minimap. */
+#vitals { position: fixed; top: 10px; right: 100px; width: 142px; z-index: 10; }
+body.touch #vitals { right: 80px; width: 116px; }
+.vbar { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.vic { font-size: 14px; text-shadow: 0 1px 2px #000; }
+.vtrack { flex: 1; height: 11px; background: rgba(0,0,0,0.55); border-radius: 6px;
+  overflow: hidden; border: 1px solid rgba(255,255,255,0.2); }
+#hp-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #d83b3b, #ff7a7a); transition: width 0.2s; }
+#food-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #c08a2a, #f4d35e); transition: width 0.2s; }
+#stam-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #3a9d6a, #7fe3a0); transition: width 0.12s; }
+#stam-fill.cd { background: linear-gradient(90deg, #b23a3a, #ff7a7a); } /* cooldown after depletion */
+
+#hotbar { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 5px; z-index: 10; }
+#hotbar-track { display: flex; gap: 5px; }
+/* Scroll arrows + clipped 3-slot window are touch-only. */
+.hb-arrow { display: none; }
+body.touch #hotbar { gap: 8px; }
+body.touch #hotbar-view { width: 128px; overflow-x: hidden; overflow-y: visible;
+  padding: 6px 0; display: flex; justify-content: flex-start; }
+body.touch #hotbar-track { transition: transform 0.16s ease; }
+body.touch .hb-arrow { display: flex; align-items: center; justify-content: center;
+  width: 38px; height: 44px; border-radius: 9px; font-size: 26px; line-height: 1;
+  background: rgba(10,16,30,0.6); color: #fff; border: 2px solid rgba(255,255,255,0.25);
+  cursor: pointer; flex: none; }
+body.touch .hb-arrow:active { background: rgba(58,123,213,0.7); }
+
+/* Quick-use medkit/food buttons (bottom, within thumb reach). */
+#consumables { position: fixed; left: 168px; bottom: 16px; display: flex; gap: 8px; z-index: 11; }
+.cons-btn { position: relative; width: 46px; height: 46px; border-radius: 10px; font-size: 22px;
+  background: rgba(10,16,30,0.6); color: #fff; border: 2px solid rgba(255,255,255,0.25); cursor: pointer; }
+.cons-btn:active { background: rgba(58,123,213,0.7); }
+.cons-btn:disabled { opacity: 0.4; }
+.cons-btn span { position: absolute; bottom: -3px; right: -3px; min-width: 16px; height: 16px;
+  border-radius: 8px; padding: 0 3px; font-size: 11px; line-height: 16px; color: #fff; background: #b23a3a; }
+#cons-food span { background: #c08a2a; }
+/* Stack the heal/food buttons in a column on the left edge, above the joystick,
+   clear of the centred hotbar so they no longer overlap it. */
+body.touch #consumables { left: 14px; right: auto; bottom: 200px; flex-direction: column; gap: 10px; }
+
+/* Active skills bar (3 class skills). */
+#skillbar { position: fixed; bottom: 72px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 10px; z-index: 11; }
+.skill { position: relative; width: 42px; height: 42px; border-radius: 10px; overflow: hidden;
+  background: rgba(10,16,30,0.7); border: 2px solid rgba(255,255,255,0.25); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; user-select: none; }
+.skill .sk-ico { font-size: 19px; }
+.skill .sk-key { position: absolute; top: 0; left: 3px; font-size: 8px; color: #9fd6ff; }
+.skill .sk-lvl { position: absolute; bottom: 0; right: 3px; font-size: 8px; color: #f4d35e; }
+.skill .sk-cd { position: absolute; left: 0; bottom: 0; width: 100%; height: 0%;
+  background: rgba(0,0,0,0.6); pointer-events: none; }
+.skill.locked { opacity: 0.5; }
+.skill:active { border-color: #fff; }
+.slot { position: relative; width: 36px; height: 36px; border-radius: 7px;
+  background: rgba(10,16,30,0.6); border: 2px solid rgba(255,255,255,0.18);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.slot img { width: 26px; height: 26px; image-rendering: pixelated; border-radius: 4px; }
+.slot .ico { font-size: 20px; line-height: 1; }
+.slot.tool { background: rgba(40,28,16,0.6); border-color: rgba(244,211,94,0.45); }
+.slot .num { position: absolute; top: 1px; left: 4px; font-size: 10px; color: #cfe; opacity: 0.8; }
+.slot.active { border-color: #fff; box-shadow: 0 0 10px rgba(255,255,255,0.5); transform: scale(1.08); }
+
+/* Red damage flash when hit. */
+#hurt-flash { position: fixed; inset: 0; z-index: 4; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(180,0,0,0) 40%, rgba(180,0,0,0.55) 100%);
+  transition: opacity 0.18s ease-out; }
+#hurt-flash.show { opacity: 1; transition: opacity 0.05s; }
+
+#chat-log { position: fixed; left: 10px; bottom: 150px; width: min(360px, 70vw);
+  max-height: 30vh; overflow-y: auto; z-index: 9; font-size: 13px;
+  text-shadow: 0 1px 2px #000; pointer-events: none; }
+.chat-line { margin: 2px 0; }
+.chat-line.system { color: #9fd6b3; }
+#chat-input { position: fixed; left: 10px; bottom: 120px; width: min(360px, 80vw);
+  padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(58,123,213,0.6); z-index: 12;
+  background: rgba(10,16,30,0.45); color: #fff; font-size: 15px; }
+
+#toasts { position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; gap: 8px; align-items: center; z-index: 20; }
+.toast { background: rgba(20,30,55,0.5); border: 1px solid rgba(244,211,94,0.6); color: #fff;
+  padding: 10px 16px; border-radius: 10px; font-size: 14px; white-space: pre-line;
+  text-shadow: 0 1px 3px #000; text-align: center; opacity: 0; transform: translateY(-12px); transition: all 0.4s; }
+.toast.show { opacity: 0.85; transform: translateY(0); }
+
+#death { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(40,0,0,0.55); z-index: 30; }
+.death-card { background: rgba(15,22,40,0.95); border: 1px solid #803030; border-radius: 14px;
+  padding: 28px; text-align: center; }
+.death-card h2 { font-size: 28px; margin-bottom: 8px; }
+.death-card button { margin-top: 16px; padding: 12px 28px; border: none; border-radius: 10px;
+  background: #d54a4a; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
+
+#leaderboard { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: rgba(15,22,40,0.96); border: 1px solid #2c3e63; border-radius: 14px;
+  padding: 22px; z-index: 25; min-width: 280px; }
+#leaderboard h2 { text-align: center; margin-bottom: 12px; }
+#leaderboard table { width: 100%; border-collapse: collapse; }
+#leaderboard th, #leaderboard td { padding: 6px 10px; text-align: left; font-size: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.08); }
+#leaderboard th { color: #9fb3d6; }
+
+/* ---------------- Windows (Bag / Character / Settings) ---------------- */
+.panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: rgba(15,22,40,0.98); border: 1px solid #2c3e63; border-radius: 14px;
+  padding: 16px 18px; z-index: 30; width: min(440px, 94vw); max-height: 88vh; overflow-y: auto; }
+.panel h2 { font-size: 18px; }
+.panel table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.panel th, .panel td { padding: 6px 8px; text-align: left; font-size: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.08); }
+.panel th { color: #9fb3d6; }
+.panel td img.mat { width: 18px; height: 18px; vertical-align: middle;
+  image-rendering: pixelated; border-radius: 3px; margin-right: 4px; }
+.inv-summary { display: flex; align-items: center; justify-content: space-between;
+  margin-top: 14px; font-size: 15px; }
+.panel button { padding: 9px 16px; border: none; border-radius: 9px; cursor: pointer;
+  font-size: 14px; font-weight: 600; background: #3a7bd5; color: #fff; }
+.panel button.secondary { background: #2c3e63; }
+.panel button.danger { background: #b23a3a; }
+.panel button:active { transform: translateY(1px); }
+.panel h3 { margin: 14px 0 6px; font-size: 13px; color: #9fb3d6; }
+.panel-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.panel-head h2 { margin-right: auto; }
+.panel-exit { background: #2c3e63 !important; width: 34px; padding: 7px 0 !important; text-align: center; }
+.set-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.set-actions a { color: #7fc3ff; text-decoration: none; font-size: 14px; padding: 8px; text-align: center;
+  background: #16203a; border-radius: 9px; }
+/* paper-doll: equipped gear laid out on a body */
+.paperdoll { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 10px 0;
+  grid-template-areas: ". helmet ." "weapon chest ." ". legs ." ". boots ."; }
+.pd-slot { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 4px;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; font-size: 10px; }
+.pd-slot.empty { opacity: 0.45; }
+.pd-slot .pd-ic { font-size: 22px; line-height: 1; }
+.pd-slot .pd-lb { color: #9fb3d6; }
+.pd-helmet { grid-area: helmet; } .pd-weapon { grid-area: weapon; } .pd-chest { grid-area: chest; }
+.pd-legs { grid-area: legs; } .pd-boots { grid-area: boots; }
+.tabs { display: flex; gap: 6px; }
+.tab { padding: 6px 12px; border: 1px solid #2c3e63; border-radius: 8px; cursor: pointer;
+  background: #16203a; color: #cfe; font-size: 13px; font-weight: 600; }
+.tab.active { background: #3a7bd5; border-color: #3a7bd5; }
+.gear-summary { background: rgba(0,0,0,0.25); border: 1px solid #2c3e63; border-radius: 10px;
+  padding: 10px 12px; font-size: 13px; line-height: 1.6; margin-bottom: 6px; }
+.gear-list { display: flex; flex-direction: column; gap: 6px; }
+.gear-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 7px 10px; border-radius: 8px; background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08); font-size: 14px; }
+.gear-row.equipped { border-color: #7fe3a0; background: rgba(95,211,160,0.12); }
+.gear-row small { color: #9fb3d6; }
+.panel button.small { padding: 6px 10px; font-size: 12px; min-width: 34px; }
+.panel button.small:disabled { opacity: 0.5; cursor: default; }
+.xp-row { display: flex; align-items: center; gap: 8px; margin: 12px 0 6px; font-size: 12px; color: #9fb3d6; }
+.xp-track { flex: 1; height: 10px; background: rgba(0,0,0,0.5); border-radius: 5px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.15); }
+#char-xp { height: 100%; width: 0%; background: linear-gradient(90deg, #7fe3a0, #3ad57b); transition: width 0.3s; }
+.points-line { font-size: 13px; margin-bottom: 8px; }
+.points-line b { color: #f4d35e; font-size: 15px; }
+.class-pick { margin-bottom: 12px; }
+.class-pick label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9fb3d6; }
+.class-pick select { padding: 9px; border-radius: 8px; border: 1px solid #2c3e63; background: #0c1326;
+  color: #fff; font-size: 15px; }
+#c-class-desc { margin-top: 6px; }
+
+/* ---------------- Tutorial ---------------- */
+#tutorial { position: fixed; inset: 0; z-index: 58; display: flex; align-items: center;
+  justify-content: center; padding: 16px; background: rgba(6, 9, 16, 0.78); }
+.tut-card { background: rgba(15, 22, 40, 0.98); border: 1px solid #2c3e63; border-radius: 16px;
+  padding: 22px; width: 100%; max-width: 420px; text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+.tut-icon { font-size: 46px; line-height: 1; margin-bottom: 8px; }
+.tut-card h2 { font-size: 21px; margin-bottom: 10px; }
+.tut-card p { color: #c7d3ea; font-size: 14px; line-height: 1.6; min-height: 84px; }
+.tut-card p b { color: #fff; }
+.tut-dots { display: flex; gap: 6px; justify-content: center; margin: 14px 0 4px; }
+.tut-dots span { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.25); }
+.tut-dots span.on { background: #3a7bd5; }
+.tut-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.tut-spacer { flex: 1; }
+.tut-card button { padding: 10px 18px; border: none; border-radius: 10px; cursor: pointer;
+  font-size: 15px; font-weight: 600; background: #3a7bd5; color: #fff; }
+.tut-card button.secondary { background: #2c3e63; }
+.tut-card button:active { transform: translateY(1px); }
+
+/* ---------------- Character editor ---------------- */
+#character { position: fixed; inset: 0; z-index: 60; display: flex;
+  align-items: center; justify-content: center; padding: 16px;
+  background: radial-gradient(circle at 50% 20%, #1b2a4a, #070a12); }
+.char-wrap { display: flex; gap: 18px; width: 100%; max-width: 820px; max-height: 94vh;
+  background: rgba(12,18,34,0.9); border: 1px solid #2c3e63; border-radius: 16px;
+  padding: 18px; overflow: hidden; }
+.char-preview { flex: 0 0 300px; display: flex; flex-direction: column; align-items: center; }
+#char-canvas { width: 100%; height: 380px; border-radius: 12px; background: #121a30;
+  border: 1px solid #2c3e63; touch-action: none; cursor: grab; }
+.char-hint { color: #6a7da0; font-size: 12px; margin-top: 8px; }
+.char-controls { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow-y: auto; }
+.char-controls h2 { margin-bottom: 14px; }
+.char-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.char-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9fb3d6; }
+.char-grid input[type=color] { width: 100%; height: 34px; padding: 2px; border-radius: 8px;
+  border: 1px solid #2c3e63; background: #0c1326; cursor: pointer; }
+.char-grid select { width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #2c3e63;
+  background: #0c1326; color: #fff; font-size: 14px; }
+.char-actions { display: flex; gap: 10px; margin-top: 18px; }
+.char-actions button { flex: 1; padding: 12px; border: none; border-radius: 10px; cursor: pointer;
+  font-size: 15px; font-weight: 600; background: #3a7bd5; color: #fff; }
+.char-actions button.secondary { background: #2c3e63; }
+.char-actions button:active { transform: translateY(1px); }
+
+@media (max-width: 680px) {
+  .char-wrap { flex-direction: column; overflow-y: auto; }
+  .char-preview { flex: none; }
+  #char-canvas { height: 260px; }
+}
+
+/* ---------------- Touch controls ---------------- */
+/* Full-screen capture layer for the joysticks. Sits above the canvas but BELOW
+   the HUD (hotbar/topbar at z-index 10), so those stay tappable. */
+#touch-layer { position: fixed; inset: 0; z-index: 5; }
+
+/* Movement joystick (left thumb). The base re-centres under the thumb on touch
+   and returns to its home corner (faint) on release. The whole right side of
+   the screen is a free drag area for looking around. */
+.stick { position: fixed; width: 130px; height: 130px; border-radius: 50%;
+  background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.22);
+  box-shadow: inset 0 0 24px rgba(0,0,0,0.25); z-index: 16; pointer-events: none;
+  opacity: 0.5; transition: opacity 0.15s; }
+.stick.active { opacity: 1; background: rgba(255,255,255,0.1); }
+#joystick { left: 24px; bottom: 24px; }
+.stick .knob { position: absolute; top: 50%; left: 50%; width: 58px; height: 58px;
+  margin: -29px 0 0 -29px; border-radius: 50%; background: rgba(255,255,255,0.35);
+  border: 2px solid rgba(255,255,255,0.5); box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
+.stick.active .knob { background: rgba(255,255,255,0.55); }
+/* Sprinting: knob glows green. Cooldown after depleting stamina: ring turns red. */
+.stick.sprint .knob { background: rgba(95,211,160,0.85); border-color: #7fe3a0;
+  box-shadow: 0 0 14px rgba(95,211,160,0.7); }
+.stick.cd { border-color: rgba(255,107,107,0.8); }
+.stick.cd .knob { background: rgba(255,107,107,0.55); border-color: #ff9b9b; }
+.stick .lbl { position: absolute; left: 0; right: 0; bottom: -20px; text-align: center;
+  font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: 1px; }
+
+/* Action buttons on the right edge, vertically centred so they clear the
+   bottom-corner joysticks. */
+#touch-buttons { position: fixed; right: 14px; top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; gap: 14px; z-index: 16; }
+.tbtn { width: 60px; height: 60px; border-radius: 50%; font-size: 24px;
+  background: rgba(10,16,30,0.55); color: #fff; border: 2px solid rgba(255,255,255,0.25); }
+.tbtn:active { background: rgba(58,123,213,0.7); }
+.tbtn.on { background: rgba(95,211,160,0.75); border-color: #7fe3a0; }
+
+/* ---- Mobile Legends-style right-thumb cluster ----
+   Big primary (attack/mine) in the very corner, build next to it, the 3 skills
+   diagonal sweep up-left of the attack button (per the player's sketch). */
+body.touch #touch-buttons { position: fixed; inset: 0; transform: none; display: block; pointer-events: none; }
+body.touch .tbtn { position: fixed; pointer-events: auto; z-index: 17; }
+body.touch #btn-mine   { right: 18px;  bottom: 18px;  width: 92px; height: 92px; font-size: 34px; } /* attack/mine/build */
+body.touch #btn-view   { right: 250px; bottom: 39px;  width: 50px; height: 50px; font-size: 22px; } /* pink: left of the arc */
+body.touch #skillbar { position: fixed; left: auto; right: 0; bottom: 0; transform: none;
+  width: 0; height: 0; display: block; z-index: 17; }
+body.touch #skillbar .skill { position: absolute; width: 50px; height: 50px; }
+body.touch #skillbar .skill .sk-ico { font-size: 21px; }
+/* 3 skills evenly spaced on a 110px arc around the attack button (90°/135°/180°),
+   so each is the same distance from the attack button and from each other. */
+body.touch #skillbar .skill:nth-child(1) { right: 39px;  bottom: 149px; } /* top */
+body.touch #skillbar .skill:nth-child(2) { right: 117px; bottom: 117px; } /* diagonal */
+body.touch #skillbar .skill:nth-child(3) { right: 149px; bottom: 39px; }  /* left */
+
+body.touch #crosshair { font-size: 22px; }
+/* Anchor chat near the top on touch so the soft keyboard doesn't cover it.
+   16px font keeps iOS from auto-zooming the page when the field focuses. */
+body.touch #chat-input { top: 54px; bottom: auto; font-size: 16px; }
+body.touch #chat-log { bottom: auto; top: 96px; max-height: 20vh; }
+
+@media (max-width: 600px) {
+  .pill { font-size: 11px; padding: 4px 8px; }
+  .slot { width: 32px; height: 32px; }
+  .slot img { width: 23px; height: 23px; }
+}

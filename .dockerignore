@@ -1,0 +1,10 @@
+node_modules
+data
+*.log
+.git
+.gitignore
+*.sqlite
+*.sqlite-journal
+*.db
+.env
+.DS_Store

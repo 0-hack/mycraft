@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0e1a" />
+  <title>MyCraft — Multiplayer Browser Sandbox</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="game"></div>
+
+  <!-- ---------------- Login / Register ---------------- -->
+  <div id="auth" class="hidden">
+    <div class="auth-card">
+      <h1>⛏ MyCraft</h1>
+      <p class="tagline">A multiplayer block sandbox in your browser.</p>
+      <input id="auth-user" placeholder="Username" autocomplete="username" />
+      <input id="auth-pass" type="password" placeholder="Password" autocomplete="current-password" />
+      <div class="auth-buttons">
+        <button id="btn-login">Log in</button>
+        <button id="btn-register" class="secondary">Create account</button>
+      </div>
+      <div id="auth-msg"></div>
+      <p class="hint">Your account, inventory and progress are saved to the server.</p>
+    </div>
+  </div>
+
+  <!-- ---------------- HUD ---------------- -->
+  <div id="hud" class="hidden">
+    <div id="hurt-flash"></div>
+    <div id="crosshair">＋</div>
+    <div id="target-bracket" class="hidden"><i></i><i></i><i></i><i></i></div>
+    <div id="mine-bar"><div></div></div>
+    <div id="floats"></div>
+    <div id="boss-banner" class="hidden"></div>
+    <div id="boss-bar" class="hidden">
+      <span id="boss-name">Warlord</span>
+      <div class="bossbar-track"><div id="boss-fill"></div></div>
+    </div>
+    <canvas id="minimap" width="150" height="150"></canvas>
+
+    <div id="topbar">
+      <button id="btn-name" class="pill btn">👤 <b id="whoami">—</b> ⚙</button>
+      <span class="pill">🌐 <b id="online">1</b></span>
+      <span class="pill">💰 <b id="cash">0</b></span>
+      <button id="btn-char" class="pill btn">⭐ Lv <b id="level">1</b> · <span id="xp-pct">0%</span></button>
+      <button id="btn-bag" class="pill btn">🎒 Bag</button>
+      <button id="btn-view2" class="pill btn">👁 View</button>
+      <button id="btn-chat" class="pill btn">💬</button>
+      <button id="btn-leaderboard" class="pill btn">🏆</button>
+      <span id="score" class="hidden">0</span><span id="mined" class="hidden">0</span>
+    </div>
+
+    <div id="vitals">
+      <div class="vbar"><span class="vic">❤️</span><div class="vtrack"><div id="hp-fill"></div></div></div>
+      <div class="vbar"><span class="vic">🍗</span><div class="vtrack"><div id="food-fill"></div></div></div>
+      <div class="vbar"><span class="vic">⚡</span><div class="vtrack"><div id="stam-fill"></div></div></div>
+    </div>
+
+    <div id="hotbar"></div>
+    <div id="skillbar"></div>
+    <div id="consumables">
+      <button id="cons-medkit" class="cons-btn" title="Use healing patch (Q)">🩹<span id="cm-n">0</span></button>
+      <button id="cons-food" class="cons-btn" title="Use food (F)">🍗<span id="cf-n">0</span></button>
+    </div>
+
+    <div id="chat-log"></div>
+    <input id="chat-input" class="hidden" placeholder="Press Enter to send… (Esc to cancel)" maxlength="200" />
+
+    <div id="toasts"></div>
+
+    <!-- Death screen -->
+    <div id="death" class="hidden">
+      <div class="death-card">
+        <h2>💀 You died</h2>
+        <p>Your progress is saved. Jump back in!</p>
+        <button id="btn-respawn">Respawn</button>
+      </div>
+    </div>
+
+    <!-- Leaderboard -->
+    <div id="leaderboard" class="hidden">
+      <h2>🏆 Top Builders</h2>
+      <table>
+        <thead><tr><th>#</th><th>Player</th><th>Score</th><th>Lv</th></tr></thead>
+        <tbody id="lb-body"></tbody>
+      </table>
+      <p class="hint">Tap the Leaderboard button again to close.</p>
+    </div>
+
+    <!-- Bag: inventory + equipped gear + crafting (toggle with B) -->
+    <div id="inventory" class="panel hidden">
+      <div class="panel-head">
+        <h2>🎒 Bag</h2>
+        <div class="tabs">
+          <button id="tab-items" class="tab active">Items</button>
+          <button id="tab-gear" class="tab">Gear</button>
+          <button id="tab-craft" class="tab">Craft</button>
+        </div>
+        <button class="panel-exit" data-close="inventory">✕</button>
+      </div>
+
+      <div id="panel-items">
+        <h3>Consumables</h3>
+        <div id="cons-list" class="gear-list"></div>
+        <h3>Materials</h3>
+        <p class="hint">Mine blocks to gather materials, then sell them for 💰 cash.
+          Your cash &amp; materials drop where you die — defend your stash!</p>
+        <table>
+          <thead><tr><th>Material</th><th>Qty</th><th>Unit</th><th>Value</th></tr></thead>
+          <tbody id="inv-body"></tbody>
+        </table>
+        <div class="inv-summary">
+          <span>Total value: 💰 <b id="inv-total">0</b></span>
+          <button id="btn-sell">Sell all</button>
+        </div>
+      </div>
+
+      <div id="panel-gear" class="hidden">
+        <div id="gear-summary" class="gear-summary"></div>
+        <div class="paperdoll" id="paperdoll"></div>
+        <h3>Weapons — tap to equip</h3>
+        <div id="gear-weapons" class="gear-list"></div>
+      </div>
+
+      <div id="panel-craft" class="hidden">
+        <div id="craft-list" class="gear-list"></div>
+      </div>
+    </div>
+
+    <!-- Character: attributes + skills -->
+    <div id="charsheet" class="panel hidden">
+      <div class="panel-head">
+        <h2>⭐ Character</h2>
+        <button class="panel-exit" data-close="charsheet">✕</button>
+      </div>
+      <div id="char-info" class="gear-summary"></div>
+      <div class="xp-row"><div class="xp-track"><div id="char-xp"></div></div><span id="char-xp-label"></span></div>
+      <h3>Attributes — <b id="char-points">0</b> point(s)</h3>
+      <div id="char-attrs" class="gear-list"></div>
+      <h3>Skills — <b id="skill-points">0</b> point(s)</h3>
+      <div id="skill-list" class="gear-list"></div>
+    </div>
+
+    <!-- Settings (open by tapping your name) -->
+    <div id="settings" class="panel hidden">
+      <div class="panel-head">
+        <h2>⚙ Settings</h2>
+        <button class="panel-exit" data-close="settings">✕</button>
+      </div>
+      <div class="set-actions">
+        <button id="btn-help" class="secondary">❔ How to play</button>
+        <button id="btn-customize" class="secondary">🧑‍🎨 Customise character</button>
+        <button id="btn-sound" class="secondary">🔊 Sound</button>
+        <a id="admin-link" class="hidden" href="/admin.html" target="_blank">🛠 Admin panel</a>
+        <button id="btn-logout" class="secondary">Log out</button>
+        <button id="btn-delete-account" class="danger">Delete account</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------------- Tutorial ---------------- -->
+  <div id="tutorial" class="hidden">
+    <div class="tut-card">
+      <div class="tut-icon" id="tut-icon">👋</div>
+      <h2 id="tut-title"></h2>
+      <p id="tut-body"></p>
+      <div class="tut-dots" id="tut-dots"></div>
+      <div class="tut-actions">
+        <button id="tut-skip" class="secondary">Skip</button>
+        <span class="tut-spacer"></span>
+        <button id="tut-back" class="secondary">Back</button>
+        <button id="tut-next">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------------- Character editor ---------------- -->
+  <div id="character" class="hidden">
+    <div class="char-wrap">
+      <div class="char-preview">
+        <canvas id="char-canvas"></canvas>
+        <p class="char-hint">Drag to spin • auto-rotating</p>
+      </div>
+      <div class="char-controls">
+        <h2>🧑‍🎨 Customise your character</h2>
+        <div class="class-pick">
+          <label>Class (gene) <select id="c-class"></select></label>
+          <p id="c-class-desc" class="hint"></p>
+        </div>
+        <div class="char-grid">
+          <label>Skin <input type="color" id="c-skin" /></label>
+          <label>Hair style <select id="c-hair"></select></label>
+          <label>Hair colour <input type="color" id="c-hairColor" /></label>
+          <label>Face <select id="c-face"></select></label>
+          <label>Shirt <input type="color" id="c-shirt" /></label>
+          <label>Pants <input type="color" id="c-pants" /></label>
+          <label>Shoes <input type="color" id="c-shoes" /></label>
+          <label>Accessory <select id="c-accessory"></select></label>
+          <label>Accessory colour <input type="color" id="c-accessoryColor" /></label>
+          <label>Bag <select id="c-bag"></select></label>
+          <label>Bag colour <input type="color" id="c-bagColor" /></label>
+        </div>
+        <div class="char-actions">
+          <button id="c-random" class="secondary">🎲 Randomise</button>
+          <button id="c-save">Save &amp; play</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------------- Touch controls ---------------- -->
+  <div id="touch-layer" class="hidden">
+    <div id="joystick" class="stick"><div class="knob"></div><span class="lbl">MOVE · push to run</span></div>
+    <div id="touch-buttons">
+      <button id="btn-mine" class="tbtn">⛏</button>
+      <button id="btn-view" class="tbtn">👁</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MyCraft — Admin</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(circle at 50% 0%, #18233f, #0a0e1a); color: #e8eefc;
+      min-height: 100vh; padding: 20px; }
+    h1 { font-size: 24px; margin-bottom: 4px; }
+    h2 { font-size: 16px; margin: 0 0 12px; color: #9fb3d6; }
+    .wrap { max-width: 980px; margin: 0 auto; }
+    .card { background: rgba(15,22,40,0.9); border: 1px solid #2c3e63; border-radius: 12px;
+      padding: 18px; margin-top: 16px; }
+    label { display: block; font-size: 13px; color: #9fb3d6; margin-bottom: 4px; }
+    input, select { width: 100%; padding: 9px 10px; border-radius: 8px; border: 1px solid #2c3e63;
+      background: #0c1326; color: #fff; font-size: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+    button { padding: 9px 14px; border: none; border-radius: 8px; cursor: pointer;
+      font-size: 14px; font-weight: 600; background: #3a7bd5; color: #fff; }
+    button.secondary { background: #2c3e63; }
+    button.danger { background: #b23a3a; }
+    button.small { padding: 5px 9px; font-size: 12px; }
+    button:active { transform: translateY(1px); }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { padding: 7px 8px; text-align: left; font-size: 13px;
+      border-bottom: 1px solid rgba(255,255,255,0.08); white-space: nowrap; }
+    th { color: #9fb3d6; }
+    .checkbox { display: flex; align-items: center; gap: 8px; }
+    .checkbox input { width: auto; }
+    .msg { margin-top: 10px; font-size: 13px; min-height: 18px; }
+    .msg.err { color: #ff8a8a; }
+    .msg.ok { color: #7fe3a0; }
+    .hidden { display: none !important; }
+    .tag { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; }
+    .tag.admin { background: #3a7bd5; }
+    a { color: #7fc3ff; }
+    /* Per-field help text so each setting explains itself. */
+    .hint { font-size: 11px; color: #7286ab; margin-top: 5px; line-height: 1.45; }
+    .card > p.lead { color: #9fb3d6; font-size: 12.5px; margin-bottom: 12px; line-height: 1.5; }
+    /* On phones, stack every setting into its own full-width row. */
+    @media (max-width: 640px) {
+      body { padding: 12px; }
+      .grid { grid-template-columns: 1fr; }
+      .row { flex-direction: column; align-items: stretch; }
+      .row button, .row .checkbox { width: 100%; }
+      .row button { text-align: center; }
+      td, th { white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🛠 MyCraft Admin</h1>
+    <p style="color:#9fb3d6;font-size:13px">Manage difficulty, deployed objects, lifecycle and accounts.</p>
+
+    <!-- Login -->
+    <div id="login" class="card hidden">
+      <h2>Admin sign in</h2>
+      <div class="grid">
+        <div><label>Username</label><input id="a-user" autocomplete="username" /></div>
+        <div><label>Password</label><input id="a-pass" type="password" autocomplete="current-password" /></div>
+      </div>
+      <div class="row"><button id="a-login">Sign in</button></div>
+      <div id="login-msg" class="msg"></div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dash" class="hidden">
+      <div class="card">
+        <h2>Settings &amp; difficulty</h2>
+        <p class="lead">Controls the world economy, item drops and monster spawning. Start by picking a
+          difficulty preset, then fine-tune any value below. Click <b>Save settings</b> when done.</p>
+        <div class="grid">
+          <div class="field"><label>Difficulty preset</label>
+            <select id="s-difficulty">
+              <option value="easy">Easy</option>
+              <option value="normal">Normal</option>
+              <option value="hard">Hard</option>
+            </select>
+            <p class="hint">Loads a balanced set of values for everything below. You can still adjust each one afterwards.</p></div>
+          <div class="field"><label>Sell price multiplier</label><input id="s-sellMultiplier" type="number" step="0.1" min="0" />
+            <p class="hint">Cash players earn when selling mined materials. 1 = normal, 2 = double earnings.</p></div>
+          <div class="field"><label>Max pickups at once</label><input id="s-pickupCap" type="number" min="0" />
+            <p class="hint">How many medkit/food items may lie on the ground at the same time.</p></div>
+          <div class="field"><label>Pickup spawn interval (sec)</label><input id="s-pickupInterval" type="number" min="1" />
+            <p class="hint">Seconds between automatic medkit/food drops appearing in the world.</p></div>
+          <div class="field"><label>Loot despawn after (hours)</label><input id="s-dropLifetime" type="number" min="1" />
+            <p class="hint">How long a dead player's dropped cash &amp; materials remain before vanishing.</p></div>
+          <div class="field"><label>Purge accounts idle for (days)</label><input id="s-inactiveDays" type="number" min="1" />
+            <p class="hint">Accounts not logged into for this many days are automatically deleted.</p></div>
+          <div class="field"><label>Max monsters</label><input id="s-mobCap" type="number" min="0" />
+            <p class="hint">Upper limit on monsters alive in the world at once.</p></div>
+          <div class="field"><label>Monster spawn interval (sec)</label><input id="s-mobInterval" type="number" min="1" />
+            <p class="hint">Seconds between new monsters spawning, until the cap above is reached.</p></div>
+          <div class="field"><label>Monster power</label><input id="s-mobPower" type="number" step="0.1" min="0" />
+            <p class="hint">Scales monster health &amp; damage together. 1 = normal, 2 = twice as tough and deadly.</p></div>
+          <div class="field"><label>Chat min gap (sec)</label><input id="s-chatInterval" type="number" step="0.1" min="0" />
+            <p class="hint">Minimum seconds between a player's chat messages — raises this to curb spam.</p></div>
+        </div>
+        <div class="grid" style="margin-top:12px">
+          <div class="field">
+            <label class="checkbox"><input type="checkbox" id="s-medkit" /> Auto-deploy healing patches</label>
+            <p class="hint">Periodically drop medkits around the map.</p></div>
+          <div class="field">
+            <label class="checkbox"><input type="checkbox" id="s-food" /> Auto-deploy food</label>
+            <p class="hint">Periodically drop food around the map.</p></div>
+          <div class="field">
+            <label class="checkbox"><input type="checkbox" id="s-mob" /> Spawn monsters (PvE)</label>
+            <p class="hint">Master switch for monster spawning server-wide.</p></div>
+        </div>
+        <div class="row"><button id="s-save">Save settings</button>
+          <span id="settings-msg" class="msg"></span></div>
+      </div>
+
+      <div class="card">
+        <h2>Player &amp; combat tuning</h2>
+        <p class="lead">Adjusts how players move, survive and fight. The defaults are already balanced —
+          change these only if you want a custom feel. Click <b>Save tuning</b> when done.</p>
+        <div class="grid">
+          <div class="field"><label>Spawn protection (sec)</label><input id="s-spawnProtect" type="number" step="0.5" min="0" />
+            <p class="hint">After (re)spawning, the player takes no fall or attack damage for this many seconds.</p></div>
+          <div class="field"><label>Hunger drain rate</label><input id="s-hungerDrain" type="number" step="0.05" min="0" />
+            <p class="hint">How fast the food bar empties. Below 1 = slower (more forgiving), above 1 = faster.</p></div>
+          <div class="field"><label>Stamina deplete time (sec)</label><input id="s-staminaDrain" type="number" step="0.5" min="1" />
+            <p class="hint">Seconds of continuous sprinting before stamina runs out.</p></div>
+          <div class="field"><label>Stamina refill time (sec)</label><input id="s-staminaRefill" type="number" step="0.5" min="1" />
+            <p class="hint">Seconds to fully recharge stamina after it's been depleted.</p></div>
+          <div class="field"><label>Move speed</label><input id="s-moveSpeed" type="number" step="0.05" min="0" />
+            <p class="hint">Base walk/run speed for everyone. 1 = normal.</p></div>
+          <div class="field"><label>Skill damage</label><input id="s-skillDmg" type="number" step="0.05" min="0" />
+            <p class="hint">Damage dealt by class skills. 1 = normal.</p></div>
+          <div class="field"><label>Skill range</label><input id="s-skillRange" type="number" step="0.05" min="0" />
+            <p class="hint">Reach / area of class skills. 1 = normal.</p></div>
+          <div class="field"><label>Skill cooldown</label><input id="s-skillCd" type="number" step="0.05" min="0" />
+            <p class="hint">Wait time between skill uses. Below 1 = faster (more often), above 1 = slower.</p></div>
+        </div>
+        <div class="row"><button id="s-save2">Save tuning</button>
+          <span id="tuning-msg" class="msg"></span></div>
+      </div>
+
+      <div class="card">
+        <h2>Deploy objects now</h2>
+        <p class="lead">Instantly spawn items or monsters into the live world — handy for events or testing.
+          Set how many, then click a button.</p>
+        <div class="row">
+          <label class="checkbox" style="flex-direction:column;align-items:flex-start">
+            <span>Count (per click)</span><input id="d-count" type="number" min="1" max="20" value="3" style="width:90px" />
+          </label>
+          <button id="d-medkit">Deploy medkits</button>
+          <button id="d-food" class="secondary">Deploy food</button>
+          <button id="d-mob" class="danger">Spawn monsters</button>
+          <button id="d-boss" class="danger">Spawn boss</button>
+          <span id="deploy-msg" class="msg"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Online players (<span id="online-count">0</span>)</h2>
+        <table><thead><tr><th>Player</th><th>Pos</th><th>HP</th><th>Cash</th></tr></thead>
+          <tbody id="online-body"></tbody></table>
+        <h2 style="margin-top:18px">Monsters (<span id="mob-count">0</span>)</h2>
+        <h2 style="margin-top:18px">Dropped loot (<span id="ground-count">0</span>)</h2>
+        <table><thead><tr><th>Owner</th><th>Pos</th><th>Cash</th><th>Materials</th></tr></thead>
+          <tbody id="ground-body"></tbody></table>
+      </div>
+
+      <div class="card">
+        <h2>Recent chat</h2>
+        <div id="chat-body" style="max-height:200px;overflow-y:auto;font-size:13px;line-height:1.7"></div>
+      </div>
+
+      <div class="card">
+        <h2>Accounts</h2>
+        <table><thead><tr><th>User</th><th>Last active</th><th>Score</th><th>Cash</th><th>Actions</th></tr></thead>
+          <tbody id="users-body"></tbody></table>
+      </div>
+
+      <div class="row">
+        <button id="refresh" class="secondary">Refresh</button>
+        <button id="logout" class="secondary">Sign out</button>
+        <a href="/" style="margin-left:auto">← Back to game</a>
+      </div>
+      <div id="global-msg" class="msg"></div>
+    </div>
+  </div>
+  <script type="module" src="js/admin.js"></script>
+</body>
+</html>

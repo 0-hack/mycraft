@@ -1,0 +1,29 @@
+# MyCraft via Docker Compose.
+#   Install / start:  docker compose up -d --build
+#   Stop (keep data): docker compose down
+#   Remove entirely:  docker compose down -v --rmi all
+#
+# The named volume "mycraft_data" holds the SQLite world + accounts (mounted at
+# /data, where DATA_DIR points). Dropping it with `-v` wipes all saved state.
+
+services:
+  mycraft:
+    build: .
+    image: mycraft:latest
+    container_name: mycraft
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - DATA_DIR=/data
+      - WORLD_SEED=1337
+      # The account with this username (or the first one registered) is admin.
+      - ADMIN_USERNAME=admin
+      # Change this to a long random string before exposing the server publicly.
+      - JWT_SECRET=change-me-in-production
+    volumes:
+      - mycraft_data:/data
+
+volumes:
+  mycraft_data:
