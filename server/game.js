@@ -543,7 +543,7 @@ export function attachGame(server) {
       blockDamage.delete(k);
       setBlock(x, y, z, 0);
       broadcast({ type: 'block', x, y, z, t: 0 }); // world edit: everyone (consistency)
-      broadcastNear(x, z, CRACK_RADIUS, { type: 'crack', x, y, z, stage: -1, broke: true });
+      broadcastNear(x, z, CRACK_RADIUS, { type: 'crack', x, y, z, stage: -1 }); // clear overlay, silently
       s.blocks_mined += 1;
       s.score += 5 + (w.mine || 0);
       gainXp(ctx, 3);

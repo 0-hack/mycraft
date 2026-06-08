@@ -1117,15 +1117,12 @@ function updateCracks() {
   }
 }
 
-// Apply a server crack update: stage -1 clears (broken or healed).
+// Apply a server crack update: stage -1 clears the overlay (block broke or
+// healed). Breaking a block is intentionally silent — no sound/notification.
 function applyCrack(msg) {
   const k = `${msg.x},${msg.y},${msg.z}`;
   if (msg.stage < 0) {
     crackStages.delete(k);
-    if (msg.broke && player) {
-      const d = Math.hypot(msg.x + 0.5 - player.pos.x, msg.z + 0.5 - player.pos.z);
-      if (d < 28) audio.play('break');
-    }
   } else {
     crackStages.set(k, msg.stage);
   }
