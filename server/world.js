@@ -2,8 +2,13 @@
 // The procedural base terrain is generated client-side from CONFIG.WORLD_SEED;
 // here we only track and persist deviations from it.
 import { worldQueries } from './db.js';
+import { CONFIG } from './config.js';
+import { WorldGen } from '../public/js/worldgen.js';
 
 const edits = new Map(); // "x,y,z" -> type (0 = air/removed)
+// Same deterministic generator the client renders from, so the server knows
+// where the procedural city (buildings, walls, lamps) actually is.
+const gen = new WorldGen(CONFIG.WORLD_SEED);
 
 // Load all persisted edits into memory on startup.
 for (const row of worldQueries.all.all()) {
@@ -36,6 +41,14 @@ export function getEditBlock(x, y, z) {
 // (air); 9 = water. Everything else players can place is a solid obstacle.
 export function isSolidEditType(t) {
   return t != null && t !== 0 && t !== 9;
+}
+
+// Is the block at (x,y,z) solid for entity collision? A player edit overrides the
+// procedural base terrain; otherwise fall back to the generated city.
+export function isSolidAt(x, y, z) {
+  const e = edits.get(`${x},${y},${z}`);
+  if (e !== undefined) return isSolidEditType(e);
+  return gen.isSolidBase(x, y, z);
 }
 
 export function editCount() {

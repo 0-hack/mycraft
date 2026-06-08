@@ -7,7 +7,8 @@ import { CONFIG } from './config.js';
 import { verifyToken } from './auth.js';
 import { stateQueries, groundQueries, userQueries } from './db.js';
 import { getSettings, clientTuning } from './settings.js';
-import { getAllEdits, setBlock, getEditBlock, isSolidEditType } from './world.js';
+import { getAllEdits, setBlock, isSolidAt } from './world.js';
+import { GEN } from '../public/js/worldgen.js';
 import {
   weaponStats, equippedWeapon, defenseOf, mitigate, upgradeCost,
   normalizeEquipment, defaultEquipment, classEquipment, WEAPONS, ARMOR, MAX_LEVEL,
@@ -768,11 +769,19 @@ export function attachGame(server) {
     const anchor = arr[(Math.random() * arr.length) | 0].state;
     const type = forceType && MOB_TYPES[forceType] ? forceType : pickMobType();
     const def = MOB_TYPES[type];
-    const ang = Math.random() * Math.PI * 2;
-    const r = 12 + Math.random() * 14;
     const hp = Math.max(1, Math.round(def.hp * cfg.mobPower));
+    // Pick an open spot near the anchor — retry a few times so monsters don't
+    // spawn trapped inside a building.
+    let sx, sz;
+    for (let i = 0; i < 8; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const r = 12 + Math.random() * 14;
+      sx = round1(anchor.x + Math.cos(ang) * r);
+      sz = round1(anchor.z + Math.sin(ang) * r);
+      if (!mobBlocked(sx, sz, anchor.y)) break;
+    }
     const m = { id: nextMobId++, type,
-      x: round1(anchor.x + Math.cos(ang) * r), y: round1(anchor.y), z: round1(anchor.z + Math.sin(ang) * r),
+      x: sx, y: round1(anchor.y), z: sz,
       yaw: 0, health: hp, maxHealth: hp, target: null, lastAttack: 0, effects: {},
       groundY: round1(anchor.y), vy: 0 }; // ground reference + vertical velocity for gravity
     mobs.set(m.id, m);
@@ -821,8 +830,9 @@ export function attachGame(server) {
       for (let dz = -r; dz <= r; dz++) {
         if (dx * dx + dz * dz > radius * radius) continue;
         const bx = Math.floor(cx) + dx, bz = Math.floor(cz) + dz;
-        for (let by = Math.floor(cy); by <= Math.floor(cy) + 3; by++) {
-          if (isSolidEditType(getEditBlock(bx, by, bz))) {
+        // Break the walls just above the ground (never the street/ground fill).
+        for (let by = Math.max(GEN.GROUND + 1, Math.floor(cy)); by <= Math.floor(cy) + 3; by++) {
+          if (isSolidAt(bx, by, bz)) {
             setBlock(bx, by, bz, 0);
             broadcast({ type: 'block', x: bx, y: by, z: bz, t: 0 });
           }
@@ -1123,13 +1133,13 @@ function safeParse(str, fallback) {
   try { return JSON.parse(str); } catch { return fallback; }
 }
 
-// Whether a player-built solid block blocks a monster standing at (x,z). Checks
-// the two cells the body occupies vertically so walls of any reasonable height
-// stop them.
+// Whether something solid (a procedural building/wall or a player-placed block)
+// blocks a monster standing at (x,z). Checks the two body cells just above the
+// surface the mob stands on, so walls of any reasonable height stop them.
 function mobBlocked(x, z, y) {
-  const bx = Math.floor(x), bz = Math.floor(z), by = Math.floor(y);
-  return isSolidEditType(getEditBlock(bx, by, bz)) ||
-    isSolidEditType(getEditBlock(bx, by + 1, bz));
+  const bx = Math.floor(x), bz = Math.floor(z);
+  const by = Math.round(y); // standing level (feet rest on the block below this)
+  return isSolidAt(bx, by, bz) || isSolidAt(bx, by + 1, bz);
 }
 
 // Monsters obey gravity: they fall toward their ground level (the surface the
