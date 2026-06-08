@@ -105,7 +105,7 @@ Verify it's ready: `docker compose version`.
 ### 2. Get the code and start it
 
 ```bash
-git clone https://github.com/<your-username>/mycraft.git
+git clone https://github.com/0-hack/mycraft.git
 cd mycraft
 docker compose up -d --build
 ```
