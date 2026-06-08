@@ -1,10 +1,17 @@
 // Central configuration for the MyCraft server.
 // Values can be overridden with environment variables.
+import crypto from 'crypto';
+
+// Token-signing secret. NEVER ship a hardcoded default — a known secret lets
+// anyone forge admin tokens. If JWT_SECRET isn't provided we generate a random
+// per-process secret (so tokens are unforgeable; everyone is logged out on
+// restart until the operator sets a persistent JWT_SECRET).
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(48).toString('hex');
 
 export const CONFIG = {
   PORT: parseInt(process.env.PORT || '4000', 10),
-  // Secret used to sign auth tokens. Override in production via env var.
-  JWT_SECRET: process.env.JWT_SECRET || 'mycraft-dev-secret-change-me',
+  JWT_SECRET,
+  JWT_SECRET_FROM_ENV: !!process.env.JWT_SECRET,
   TOKEN_TTL: '30d',
   // Deterministic world seed shared by every client so the base terrain
   // generated in the browser is identical for everyone. Only player edits
@@ -19,9 +26,11 @@ export const CONFIG = {
   // live values are admin-tunable via the settings table).
   PICKUP_CAP: 14,
   PICKUP_INTERVAL_MS: 7 * 1000,
-  // The account with this username (or the very first registered account) is
-  // granted admin rights for the /admin panel.
+  // Bootstrap admin: the very first registered account becomes admin. A specific
+  // admin username is honoured ONLY when explicitly set via the env var (so the
+  // default name can't be claimed by anyone to escalate privileges).
   ADMIN_USERNAME: process.env.ADMIN_USERNAME || 'admin',
+  ADMIN_USERNAME_FROM_ENV: !!process.env.ADMIN_USERNAME,
   // Sell value (cash) per unit for each mined material, by block id.
   MATERIAL_PRICES: {
     2: 1,   // grass

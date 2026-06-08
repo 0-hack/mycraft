@@ -5,6 +5,9 @@ import { CONFIG } from './config.js';
 import { userQueries } from './db.js';
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,16}$/;
+// A fixed bcrypt hash compared against when a username doesn't exist, to keep
+// login timing constant and avoid leaking which accounts are registered.
+const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
 
 export function signToken(user) {
   return jwt.sign({ id: user.id, username: user.username }, CONFIG.JWT_SECRET, {
@@ -24,15 +27,18 @@ export function register(username, password) {
   if (!USERNAME_RE.test(username || '')) {
     return { error: 'Username must be 3-16 letters, numbers or underscores.' };
   }
-  if (!password || password.length < 4) {
-    return { error: 'Password must be at least 4 characters.' };
+  if (typeof password !== 'string' || password.length < 6 || password.length > 200) {
+    return { error: 'Password must be 6-200 characters.' };
   }
   if (userQueries.byUsername.get(username)) {
     return { error: 'That username is already taken.' };
   }
-  // The configured admin username, or the very first account, becomes admin.
+  // Admin is granted ONLY to the first account (bootstrap), or to a username
+  // that the operator EXPLICITLY designated via the ADMIN_USERNAME env var.
+  // The default name must never auto-grant admin (anyone could claim it).
   const firstUser = userQueries.count.get().n === 0;
-  const isAdmin = (username === CONFIG.ADMIN_USERNAME || firstUser) ? 1 : 0;
+  const namedAdmin = CONFIG.ADMIN_USERNAME_FROM_ENV && username === CONFIG.ADMIN_USERNAME;
+  const isAdmin = (firstUser || namedAdmin) ? 1 : 0;
   const hash = bcrypt.hashSync(password, 10);
   const now = Date.now();
   const info = userQueries.create.run(username, hash, isAdmin, now, now);
@@ -41,8 +47,14 @@ export function register(username, password) {
 }
 
 export function login(username, password) {
+  if (typeof username !== 'string' || typeof password !== 'string' || password.length > 200) {
+    return { error: 'Invalid username or password.' };
+  }
   const user = userQueries.byUsername.get(username);
-  if (!user || !bcrypt.compareSync(password || '', user.pass_hash)) {
+  // Always run a compare (even when the user doesn't exist) so response timing
+  // doesn't reveal which usernames are registered.
+  const ok = bcrypt.compareSync(password, user ? user.pass_hash : DUMMY_HASH);
+  if (!user || !ok) {
     return { error: 'Invalid username or password.' };
   }
   if (user.banned) return { error: 'This account has been banned.' };
