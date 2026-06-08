@@ -123,6 +123,19 @@
       </div>
 
       <div class="card">
+        <h2>🎵 Background music</h2>
+        <p class="lead">Upload a looping music track to replace the built-in procedural music for
+          everyone, or reset to the default. Audio files only (mp3/ogg/wav), up to ~12&nbsp;MB.</p>
+        <p class="hint">Current: <b id="music-current">default (procedural)</b></p>
+        <div class="row">
+          <input id="music-file" type="file" accept="audio/*" />
+          <button id="music-upload">Upload &amp; apply</button>
+          <button id="music-reset" class="secondary">Reset to default</button>
+          <span id="music-msg" class="msg"></span>
+        </div>
+      </div>
+
+      <div class="card">
         <h2>Player &amp; combat tuning</h2>
         <p class="lead">Adjusts how players move, survive and fight. The defaults are already balanced —
           change these only if you want a custom feel. Click <b>Save tuning</b> when done.</p>

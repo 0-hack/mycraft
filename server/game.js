@@ -7,8 +7,8 @@ import { CONFIG } from './config.js';
 import { verifyToken } from './auth.js';
 import { stateQueries, groundQueries, userQueries } from './db.js';
 import { getSettings, clientTuning } from './settings.js';
-import { getAllEdits, setBlock, isSolidAt } from './world.js';
-import { GEN } from '../public/js/worldgen.js';
+import { getAllEdits, setBlock, isSolidAt, getBlockType } from './world.js';
+import { GEN, blockHardness } from '../public/js/worldgen.js';
 import {
   weaponStats, equippedWeapon, defenseOf, mitigate, upgradeCost,
   normalizeEquipment, defaultEquipment, classEquipment, WEAPONS, ARMOR, MAX_LEVEL,
@@ -16,7 +16,7 @@ import {
 import {
   defaultProgress, normalizeProgress, addXp, maxHealth, damageMult,
   defenseBonus, attackCooldownMult, craftDiscount, nextXp, ATTRS, ATTR_CAP, CLASSES,
-  classSkills, SKILL_CAP, critChance, CRIT_MULT,
+  classSkills, SKILL_CAP, critChance, CRIT_MULT, miningMult,
 } from '../public/js/rpg.js';
 import { MOB_TYPES, MOB_DROPS, pickMobType } from '../public/js/mobs.js';
 
@@ -93,6 +93,9 @@ export function attachGame(server) {
   const clients = new Map(); // ws -> ctx
   const ground = new Map();  // id -> { id, x, y, z, cash, materials, owner_name, dropped_at }
   const mobs = new Map();    // id -> { id, type, x, y, z, yaw, health, maxHealth, target, lastAttack }
+  // Authoritative block-break progress so cracks are shared by every player.
+  const blockDamage = new Map(); // "x,y,z" -> { dmg, max, stage, t }
+  const CRACK_STAGES = 8;
   const chatLog = [];        // recent chat for admin review (capped)
   let nextNetId = 1;
   let nextMobId = 1;
@@ -228,11 +231,15 @@ export function attachGame(server) {
           difficulty: getSettings().difficulty,
           tuning: clientTuning(),
           canFly: ctx.canFly,
+          musicUrl: getSettings().musicUrl || '',
           edits: getAllEdits(),
           players: roster().filter((p) => p.id !== ctx.netId),
           pickups: [...pickups.values()],
           ground: [...ground.values()].map(groundPublic),
           mobs: [...mobs.values()].map(mobPublic),
+          cracks: [...blockDamage].map(([key, e]) => {
+            const [x, y, z] = key.split(',').map(Number); return { x, y, z, stage: e.stage };
+          }),
         });
         broadcast({
           type: 'playerJoin',
@@ -258,6 +265,7 @@ export function attachGame(server) {
           break;
         }
         case 'block': handleBlock(ctx, ws, msg); break;
+        case 'mine': handleMine(ctx, ws, msg); break;
         case 'appearance': {
           const json = JSON.stringify(msg.appearance || {});
           if (json.length <= 2000) {
@@ -487,6 +495,75 @@ export function attachGame(server) {
     } else return;
     send(ws, { type: 'stats', state: publicState(s) });
   }
+
+  // Authoritative, shared block breaking. The client streams 'mine' ticks while
+  // chipping a block; the server accumulates damage (rate = weapon power ×
+  // strength), broadcasts crack stages so EVERY player sees them, and breaks the
+  // block into the miner's inventory when it's worn through.
+  function handleMine(ctx, ws, msg) {
+    if (ctx.dead) return;
+    const x = Math.round(msg.x), y = Math.round(msg.y), z = Math.round(msg.z);
+    if (![x, y, z].every(Number.isFinite) || y < 1 || y > 63) return;
+    const s = ctx.state;
+    // Must be within reach of the player (small slack for latency).
+    if (Math.hypot(x + 0.5 - s.x, y + 0.5 - (s.y + 1.4), z + 0.5 - s.z) > 7) return;
+    const type = getBlockType(x, y, z);
+    if (!isSolidAt(x, y, z) || type === 1 /* bedrock */) return;
+
+    const w = equippedWeapon(safeParse(s.equipment, null));
+    const rate = (1 + (w.mine || 0) * 0.4) * miningMult(safeParse(s.progress, null));
+    const now = Date.now();
+    const k = `${x},${y},${z}`;
+    let e = blockDamage.get(k);
+    const max = blockHardness(type);
+    if (!e) { e = { dmg: 0, max, stage: 0, t: now }; blockDamage.set(k, e); }
+    e.max = max;
+    const dt = Math.min(0.25, (now - (ctx.lastMine || now)) / 1000);
+    ctx.lastMine = now;
+    e.dmg += rate * dt;
+    e.t = now;
+
+    if (e.dmg >= max) {
+      blockDamage.delete(k);
+      setBlock(x, y, z, 0);
+      broadcast({ type: 'block', x, y, z, t: 0 });
+      broadcast({ type: 'crack', x, y, z, stage: -1, broke: true });
+      s.blocks_mined += 1;
+      s.score += 5 + (w.mine || 0);
+      gainXp(ctx, 3);
+      if (CONFIG.MATERIAL_PRICES[type]) {
+        const cap = getSettings().brickCap;
+        const inv = safeParse(s.inventory, {});
+        inv[type] = Math.min(cap, (inv[type] || 0) + 1);
+        s.inventory = JSON.stringify(inv);
+      }
+      send(ws, { type: 'stats', state: publicState(s) });
+    } else {
+      const stage = Math.min(CRACK_STAGES - 1, Math.floor((e.dmg / max) * CRACK_STAGES));
+      if (stage !== e.stage) { e.stage = stage; broadcast({ type: 'crack', x, y, z, stage }); }
+    }
+  }
+
+  // Idle blocks slowly recover and their cracks fade (broadcast to everyone).
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, e] of blockDamage) {
+      if (now - e.t < 6000) continue;
+      e.dmg -= e.max * 0.4;             // heal a chunk every tick once left alone
+      if (e.dmg <= 0) {
+        blockDamage.delete(k);
+        const [x, y, z] = k.split(',').map(Number);
+        broadcast({ type: 'crack', x, y, z, stage: -1 });
+      } else {
+        const stage = Math.min(CRACK_STAGES - 1, Math.floor((e.dmg / e.max) * CRACK_STAGES));
+        if (stage !== e.stage) {
+          e.stage = stage;
+          const [x, y, z] = k.split(',').map(Number);
+          broadcast({ type: 'crack', x, y, z, stage });
+        }
+      }
+    }
+  }, 1000);
 
   function handleSell(ctx, ws) {
     const s = ctx.state;
@@ -1076,6 +1153,7 @@ export function attachGame(server) {
     },
     recentChat() { return chatLog.slice(-120); },
     broadcastTuning() { broadcast({ type: 'tuning', tuning: clientTuning() }); },
+    broadcastMusic(url) { broadcast({ type: 'music', url: url || '' }); },
     refreshFly() { refreshFly(); },
     setWings(userId, on) {
       userQueries.setWings.run(on ? 1 : 0, userId);

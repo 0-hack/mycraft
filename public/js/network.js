@@ -59,6 +59,8 @@ export class Network {
   sendBlock(action, x, y, z, t, tool, mt) {
     this.send({ type: 'block', action, x, y, z, t, tool, mt });
   }
+  // Stream while chipping a block; the server accumulates the break + cracks.
+  sendMine(x, y, z) { this.send({ type: 'mine', x, y, z }); }
   sendStats(hunger) { this.send({ type: 'stats', hunger }); }
   sendDamage(amount, cause) { this.send({ type: 'damage', amount, cause }); }
   sendAttack(target, weapon, targetType) { this.send({ type: 'attack', target, weapon, targetType }); }

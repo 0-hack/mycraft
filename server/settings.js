@@ -21,6 +21,7 @@ const DEFAULTS = {
   chatMinIntervalMs: 1200,       // min gap between chat messages (anti-spam)
   wingsForAll: 0,                // 1 = every player can fly (wings); admins always can
   brickCap: 10,                  // max of each mined block type a player may hold
+  musicUrl: '',                  // admin-uploaded looping background music ('' = procedural default)
   // Player / combat tuning (balanced defaults).
   spawnProtectSec: 5,            // invulnerable to fall + attacks on each spawn
   hungerDrainMult: 0.6,          // <1 = hunger drains slower

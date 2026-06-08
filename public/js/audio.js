@@ -129,8 +129,13 @@ function musicTick() {
   musicStep = (musicStep + 1) % (8 * CHORDS.length);
 }
 
+// An admin can replace the procedural music with an uploaded looping track.
+let customUrl = '';
+let customAudio = null;
+
 export function startMusic() {
   if (!musicOn) return;
+  if (customUrl) { startCustom(); return; } // play the uploaded loop instead
   ensure();
   if (!ctx) return;
   if (ctx.state === 'suspended') ctx.resume();
@@ -140,8 +145,15 @@ export function startMusic() {
   musicTick();
   musicTimer = setInterval(musicTick, BEAT * 1000);
 }
+function startCustom() {
+  if (!customAudio) { customAudio = new Audio(); customAudio.loop = true; customAudio.volume = 0.5; }
+  customAudio.loop = true;
+  if (!customAudio.src.endsWith(customUrl)) customAudio.src = customUrl;
+  customAudio.play().catch(() => { /* needs a user gesture; will retry on next */ });
+}
 export function stopMusic() {
   if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+  if (customAudio) { customAudio.pause(); }
 }
 export function setMusicEnabled(v) {
   musicOn = !!v;
@@ -149,3 +161,14 @@ export function setMusicEnabled(v) {
   if (musicOn) startMusic(); else stopMusic();
 }
 export function toggleMusic() { setMusicEnabled(!musicOn); return musicOn; }
+
+// Switch the background track to an uploaded URL ('' restores the procedural
+// default). Called on join and when an admin uploads/resets the music.
+export function setMusicUrl(url) {
+  url = url || '';
+  if (url === customUrl) { if (musicOn) startMusic(); return; }
+  customUrl = url;
+  stopMusic();
+  if (customUrl && customAudio) { customAudio.pause(); customAudio.removeAttribute('src'); customAudio.load(); }
+  if (musicOn) startMusic();
+}

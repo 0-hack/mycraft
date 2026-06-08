@@ -65,6 +65,7 @@ function fillSettings(s) {
   $('s-food').checked = !!s.foodEnabled;
   $('s-mob').checked = !!s.mobEnabled;
   $('s-wingsForAll').checked = !!s.wingsForAll;
+  if ($('music-current')) $('music-current').textContent = s.musicUrl ? 'custom uploaded track' : 'default (procedural)';
   // Player / combat tuning
   $('s-spawnProtect').value = s.spawnProtectSec;
   $('s-hungerDrain').value = s.hungerDrainMult;
@@ -115,6 +116,31 @@ $('s-save2').onclick = async () => {
 
 // Re-apply the preset preview when difficulty changes (server is source of truth on save).
 $('s-difficulty').onchange = () => msg('settings-msg', 'Save to apply the ' + $('s-difficulty').value + ' preset.', true);
+
+// ---- background music ----
+function showMusic(url) {
+  $('music-current').textContent = url ? 'custom uploaded track' : 'default (procedural)';
+}
+$('music-upload').onclick = async () => {
+  const f = $('music-file').files[0];
+  if (!f) return msg('music-msg', 'Choose an audio file first.', false);
+  if (f.size > 12 * 1024 * 1024) return msg('music-msg', 'File too large (max ~12 MB).', false);
+  msg('music-msg', 'Uploading…', true);
+  const dataUrl = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result); r.onerror = rej;
+    r.readAsDataURL(f);
+  });
+  try {
+    const r = await api('/api/admin/music', { method: 'POST', body: JSON.stringify({ dataUrl }) });
+    if (r.error) return msg('music-msg', r.error, false);
+    showMusic(r.url); msg('music-msg', 'Applied to all players ✓', true);
+  } catch { msg('music-msg', 'Upload failed (file too large?).', false); }
+};
+$('music-reset').onclick = async () => {
+  const r = await api('/api/admin/music/reset', { method: 'POST', body: JSON.stringify({}) });
+  if (r.ok) { showMusic(''); msg('music-msg', 'Reset to the default music ✓', true); }
+};
 
 // ---- deploy ----
 $('d-medkit').onclick = () => deploy('medkit');

@@ -4,6 +4,7 @@
 import express from 'express';
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { CONFIG } from './config.js';
 import { register, login, verifyToken, verifyAdmin } from './auth.js';
@@ -14,9 +15,12 @@ import { editCount } from './world.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const UPLOAD_DIR = path.join(PUBLIC_DIR, 'uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const app = express();
-app.use(express.json());
+// Allow larger bodies so admins can upload a background-music file (base64).
+app.use(express.json({ limit: '14mb' }));
 app.use(express.static(PUBLIC_DIR));
 
 app.post('/api/register', (req, res) => {
@@ -79,6 +83,39 @@ app.post('/api/admin/settings', requireAdmin, (req, res) => {
   game.broadcastTuning(); // push client-side tunables live
   game.refreshFly();      // wingsForAll may have changed — update fly permission
   res.json({ ok: true, settings });
+});
+
+// Upload a looping background-music track (admin). Body: { dataUrl } where
+// dataUrl is a base64 data URL of an audio file. Replaces the procedural music
+// for everyone; the file is served statically from /uploads.
+const MUSIC_EXT = ['mp3', 'ogg', 'wav', 'webm', 'm4a', 'aac'];
+function clearMusicFiles() {
+  for (const f of fs.readdirSync(UPLOAD_DIR)) {
+    if (f.startsWith('bgmusic.')) { try { fs.unlinkSync(path.join(UPLOAD_DIR, f)); } catch { /* ignore */ } }
+  }
+}
+app.post('/api/admin/music', requireAdmin, (req, res) => {
+  const dataUrl = req.body && req.body.dataUrl;
+  if (typeof dataUrl !== 'string') return res.status(400).json({ error: 'No file provided.' });
+  const m = /^data:audio\/([\w.+-]+);base64,(.+)$/s.exec(dataUrl);
+  if (!m) return res.status(400).json({ error: 'Please choose an audio file.' });
+  let ext = m[1].toLowerCase().replace('mpeg', 'mp3').replace('x-', '');
+  if (!MUSIC_EXT.includes(ext)) ext = 'mp3';
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > 12 * 1024 * 1024) return res.status(413).json({ error: 'File too large (max ~12 MB).' });
+  clearMusicFiles();
+  const fname = `bgmusic.${ext}`;
+  fs.writeFileSync(path.join(UPLOAD_DIR, fname), buf);
+  const url = `/uploads/${fname}?v=${Date.now()}`;
+  updateSettings({ musicUrl: url });
+  game.broadcastMusic(url);
+  res.json({ ok: true, url });
+});
+app.post('/api/admin/music/reset', requireAdmin, (_req, res) => {
+  clearMusicFiles();
+  updateSettings({ musicUrl: '' });
+  game.broadcastMusic('');
+  res.json({ ok: true });
 });
 
 app.post('/api/admin/deploy', requireAdmin, (req, res) => {

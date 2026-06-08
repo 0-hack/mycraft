@@ -52,18 +52,9 @@ export const BLOCKS = {
   [B.NEONP]:   { faces: [T.neonP, T.neonP, T.neonP], solid: true },
 };
 
-// How much effort each block takes to mine (seconds at base speed). Harder
-// blocks need a stronger player / better tool to break quickly.
-export const HARDNESS = {
-  [B.LEAVES]: 0.3, [B.GLASS]: 0.4, [B.GRASS]: 0.6, [B.DIRT]: 0.6, [B.SAND]: 0.6,
-  [B.LAMP]: 0.8, [B.PLANKS]: 1.4, [B.WOOD]: 1.6, [B.COBBLE]: 2.4, [B.STONE]: 2.8,
-  [B.BRICK]: 3.2,
-  [B.GLASST]: 0.5, [B.GLASSG]: 0.5, [B.NEON]: 0.8, [B.NEONP]: 0.8,
-  [B.ASPHALT]: 2.4, [B.ROADLINE]: 2.4, [B.CONCRETE]: 2.8, [B.MARBLE]: 3.2, [B.STEEL]: 3.8,
-};
-export function blockHardness(type) {
-  return HARDNESS[type] ?? 1.0;
-}
+// Block hardness now lives in the shared worldgen module so the server can use
+// the same values for authoritative mining; re-exported here for the client.
+export { HARDNESS, blockHardness } from './worldgen.js';
 
 // Human-readable names for materials (used by the inventory/sell UI).
 export const BLOCK_NAMES = {

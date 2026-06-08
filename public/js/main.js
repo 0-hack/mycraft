@@ -13,8 +13,7 @@ import { CharacterEditor } from './chareditor.js';
 import { Tutorial, tutorialSeen } from './tutorial.js';
 import { addAccent } from './detail.js';
 import { equippedWeapon, speedMultiplier, bodyArmorWeight, defaultEquipment, WEAPONS } from './gear.js';
-import { speedAttrMult, hungerMult, maxHealth, miningMult, defaultProgress, classSkills, CLASSES } from './rpg.js';
-import { blockHardness } from './blocks.js';
+import { speedAttrMult, hungerMult, maxHealth, defaultProgress, classSkills, CLASSES } from './rpg.js';
 import { MOB_TYPES } from './mobs.js';
 import * as audio from './audio.js';
 
@@ -163,6 +162,7 @@ function setupNetwork() {
     username = msg.username;
     dayLength = msg.dayLength;
     serverTimeOffset = msg.serverTime - Date.now();
+    if (msg.musicUrl) audio.setMusicUrl(msg.musicUrl); // admin-uploaded background track
 
     world = new World(scene, msg.seed);
     world.loadEdits(msg.edits);
@@ -196,6 +196,7 @@ function setupNetwork() {
     for (const pk of msg.pickups || []) addPickup(pk);
     for (const g of msg.ground || []) addGround(g);
     for (const mob of msg.mobs || []) { addMob(mob); if (mob.type === 'boss') showBoss(mob); }
+    for (const c of msg.cracks || []) crackStages.set(`${c.x},${c.y},${c.z}`, c.stage); // in-progress breaks
     onlineCount = msg.players.length + 1;
     ui.setOnline(onlineCount);
     ui.addChat('', 'Welcome to MyCraft! Build, mine and explore together.', true);
@@ -240,6 +241,7 @@ function setupNetwork() {
     world.remeshChunks(affected);
     ui.toast('⛏ Out of that block — mine more to build.');
   });
+  net.on('crack', (msg) => applyCrack(msg)); // shared block-break cracks
   net.on('stats', (msg) => {
     if (msg.state) {
       currentStats = { ...currentStats, ...msg.state };
@@ -254,6 +256,7 @@ function setupNetwork() {
     }
   });
   net.on('tuning', (msg) => applyTuning(msg.tuning));
+  net.on('music', (msg) => { audio.setMusicUrl(msg.url); refreshMusicBtn(); }); // admin changed the track
   net.on('canFly', (msg) => setCanFly(!!msg.value));
   net.on('spawnSet', (msg) => {
     ui.toast(`📍 Respawn point set here (${msg.x}, ${msg.y}, ${msg.z}).`);
@@ -941,41 +944,16 @@ function setupChat() {
 // ---------------------------------------------------------------- combat + blocks
 // Press = attack a player in the crosshair (within the weapon's reach), or start
 // mining the targeted block. Hold to keep mining; harder blocks take longer.
-const mineState = { active: false, key: null, progress: 0, swingT: 0 };
+const mineState = { active: false, key: null, sendT: 0, swingT: 0 };
 let ownSwing = 0;
 
-// Per-block break progress, persisted by coordinate so a block remembers how
-// damaged it is between hits/shots (its "lifespan" stays based on the last
-// state). Untouched blocks slowly heal so cracks don't linger forever.
-const blockDamage = new Map(); // "x,y,z" -> { dmg, max, t }
-function blockFrac(hit) {
-  const e = blockDamage.get(`${hit.x},${hit.y},${hit.z}`);
-  return e ? Math.min(1, e.dmg / e.max) : 0;
-}
-// Add `amount` damage to the aimed block; break it (into your inventory) when it
-// reaches its hardness. Returns the new 0..1 progress.
-function damageBlock(r, amount) {
-  const t = world.getBlock(r.hit.x, r.hit.y, r.hit.z);
-  if (t === B.AIR || t === B.BEDROCK) return 0;
-  const k = `${r.hit.x},${r.hit.y},${r.hit.z}`;
-  const max = blockHardness(t);
-  let e = blockDamage.get(k);
-  if (!e) { e = { dmg: 0, max, t: 0 }; blockDamage.set(k, e); }
-  e.max = max;
-  e.dmg += amount;
-  e.t = performance.now();
-  if (e.dmg >= max) { breakBlock(r); blockDamage.delete(k); return 1; }
-  return e.dmg / max;
-}
-// A block keeps its crack state for a while, then very slowly heals if left
-// alone — so progress persists across hits but the map stays bounded.
-function decayBlockDamage(now, dt) {
-  for (const [k, e] of blockDamage) {
-    if (now - e.t > 10000) {
-      e.dmg -= e.max * 0.2 * dt; // heal over ~5s, only after 10s untouched
-      if (e.dmg <= 0) blockDamage.delete(k);
-    }
-  }
+// Break progress is authoritative on the SERVER and shared by all players: it
+// streams 'crack' updates (stage 0..7, or -1 to clear). We just track the stage
+// per block here for rendering.
+const crackStages = new Map(); // "x,y,z" -> stage 0..7
+function blockStageFrac(hit) {
+  const st = crackStages.get(`${hit.x},${hit.y},${hit.z}`);
+  return st === undefined ? 0 : (st + 1) / 8;
 }
 
 // Fire a visible shot at a block point (gun tracer / wand orb).
@@ -1032,7 +1010,8 @@ function primaryDown() {
   if (ui.selectedBlock() == null) {
     if (w.cat === 'melee') audio.play('swing');
     mineState.active = true;   // hold to mine (melee) or auto-fire at it (ranged)
-    mineState.swingT = 0;      // fire/chip on the very next frame
+    mineState.swingT = 0;      // swing/fire on the very next frame
+    mineState.sendT = 0;       // and send the first mine tick immediately
   } else {
     placeBlock();
   }
@@ -1076,36 +1055,31 @@ function updateMining(dt) {
   if (!mineState.active || !player || player.dead || ui.anyMenuOpen()) { if (!mineState.active) setMineBar(0); return; }
   const w = equippedWeapon(myEquipment);
   const ranged = w.cat === 'ranged' || w.cat === 'magic';
-  // Break rate (damage/sec): weapon mining power (axe good, gun/wand weak) × strength.
-  const rate = (1 + (w.mine || 0) * 0.4) * miningMult(myProgress);
   mineState.swingT -= dt;
+  mineState.sendT -= dt;
   const r = player.raycast();
   const t = r ? world.getBlock(r.hit.x, r.hit.y, r.hit.z) : B.AIR;
   const minable = r && t !== B.AIR && t !== B.BEDROCK;
 
+  // Stream mining ticks to the server, which owns the break + cracks (shared by
+  // all players). The bar shows the server's crack stage for the aimed block.
+  if (minable && mineState.sendT <= 0) { mineState.sendT = 0.1; net.sendMine(r.hit.x, r.hit.y, r.hit.z); }
+
   if (ranged) {
-    // Shooters fire on a cadence: at a block they chip it open; otherwise they
-    // still throw a projectile out to their range that flies and fades — so the
+    // Shooters fire on a cadence: at a block they shoot it; otherwise they still
+    // throw a projectile out to their range that flies and fades — so the
     // wand/gun always "shoots" the same way, target or not.
     if (mineState.swingT <= 0) {
       mineState.swingT = 0.4;
       ownSwing = 1;
       audio.play(w.cat === 'magic' ? 'skillMagic' : 'skillRanged');
-      if (minable) {
-        shootAtBlock(w, new THREE.Vector3(r.hit.x + 0.5, r.hit.y + 0.5, r.hit.z + 0.5));
-        setMineBar(damageBlock(r, rate * 0.45));
-      } else {
-        throwShot(w); // nothing to mine: throw into the distance and fade
-        setMineBar(0);
-      }
-    } else {
-      setMineBar(minable ? blockFrac(r.hit) : 0);
+      if (minable) shootAtBlock(w, new THREE.Vector3(r.hit.x + 0.5, r.hit.y + 0.5, r.hit.z + 0.5));
+      else throwShot(w);
     }
-  } else {
-    if (!minable) { setMineBar(0); return; }
-    if (mineState.swingT <= 0) { ownSwing = 1; mineState.swingT = 0.45; }
-    setMineBar(damageBlock(r, rate * dt)); // melee: continuous chipping
+  } else if (minable && mineState.swingT <= 0) {
+    ownSwing = 1; mineState.swingT = 0.45; // melee chop swing
   }
+  setMineBar(minable ? blockStageFrac(r.hit) : 0);
 }
 
 // Throw a projectile in the aim direction with no target — it flies out to the
@@ -1122,16 +1096,10 @@ function throwShot(w) {
 // removed when a block fully heals, breaks, or is otherwise gone.
 function updateCracks() {
   if (!scene || !crackTextures) return;
-  const stages = crackTextures.length;
-  for (const [k, e] of blockDamage) {
-    const frac = Math.min(1, e.dmg / e.max);
-    if (frac <= 0.001) continue;
-    const [x, y, z] = k.split(',').map(Number);
-    const bt = world.getBlock(x, y, z);
-    if (bt === B.AIR || bt === B.BEDROCK) { blockDamage.delete(k); continue; } // gone (e.g. someone else broke it)
-    const stage = Math.min(stages - 1, Math.floor(frac * stages));
+  for (const [k, stage] of crackStages) {
     let mesh = crackOverlays.get(k);
     if (!mesh) {
+      const [x, y, z] = k.split(',').map(Number);
       mesh = new THREE.Mesh(crackGeo, new THREE.MeshBasicMaterial({
         transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1,
       }));
@@ -1140,11 +1108,26 @@ function updateCracks() {
       scene.add(mesh);
       crackOverlays.set(k, mesh);
     }
-    if (mesh.material.map !== crackTextures[stage]) { mesh.material.map = crackTextures[stage]; mesh.material.needsUpdate = true; }
+    const tex = crackTextures[Math.min(crackTextures.length - 1, stage)];
+    if (mesh.material.map !== tex) { mesh.material.map = tex; mesh.material.needsUpdate = true; }
   }
-  // Drop overlays whose blocks are no longer damaged.
+  // Drop overlays whose blocks no longer have a crack stage.
   for (const [k, mesh] of crackOverlays) {
-    if (!blockDamage.has(k)) { scene.remove(mesh); mesh.material.dispose(); crackOverlays.delete(k); }
+    if (!crackStages.has(k)) { scene.remove(mesh); mesh.material.dispose(); crackOverlays.delete(k); }
+  }
+}
+
+// Apply a server crack update: stage -1 clears (broken or healed).
+function applyCrack(msg) {
+  const k = `${msg.x},${msg.y},${msg.z}`;
+  if (msg.stage < 0) {
+    crackStages.delete(k);
+    if (msg.broke && player) {
+      const d = Math.hypot(msg.x + 0.5 - player.pos.x, msg.z + 0.5 - player.pos.z);
+      if (d < 28) audio.play('break');
+    }
+  } else {
+    crackStages.set(k, msg.stage);
   }
 }
 
@@ -1276,17 +1259,6 @@ function shootProjectile(from, dir, color, { to = null, maxDist = 26, speed = 16
 const _aimDir = new THREE.Vector3();
 function aimDirection() { camera.getWorldDirection(_aimDir); return _aimDir.clone(); }
 
-function breakBlock(r) {
-  if (!player || player.dead) return;
-  r = r || player.raycast();
-  if (!r) return;
-  const t = world.getBlock(r.hit.x, r.hit.y, r.hit.z);
-  if (t === B.BEDROCK || t === B.AIR) return;
-  const affected = world.applyEdit(r.hit.x, r.hit.y, r.hit.z, B.AIR);
-  world.remeshChunks(affected);
-  audio.play('break');
-  net.sendBlock('break', r.hit.x, r.hit.y, r.hit.z, B.AIR, null, t);
-}
 
 function placeBlock() {
   if (!player || player.dead) return;
@@ -1795,8 +1767,7 @@ function loop(now) {
   world.update(player.pos.x, player.pos.z, radius, 2);
 
   updateMining(dt);   // raycasts from the first-person eye (before the camera pulls back)
-  decayBlockDamage(now, dt); // idle blocks slowly heal their crack damage
-  updateCracks();            // keep crack overlays on every damaged block
+  updateCracks();            // render the server's shared crack overlays
   updateAimUI();
   interpolateRemotes(dt);
   updateMobs(dt, now / 1000);

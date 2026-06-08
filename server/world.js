@@ -51,6 +51,13 @@ export function isSolidAt(x, y, z) {
   return gen.isSolidBase(x, y, z);
 }
 
+// The block type at (x,y,z): a player edit overrides the procedural base terrain.
+export function getBlockType(x, y, z) {
+  const e = edits.get(`${x},${y},${z}`);
+  if (e !== undefined) return e;
+  return gen.baseBlock(x, y, z);
+}
+
 export function editCount() {
   return edits.size;
 }

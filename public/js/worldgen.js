@@ -11,6 +11,17 @@ const B = {
   STEEL: 19, MARBLE: 20, NEON: 21, NEONP: 22,
 };
 
+// How much effort each block takes to mine (seconds at base speed). Shared by
+// the client HUD and the server's authoritative mining. Keyed by block id.
+export const HARDNESS = {
+  [B.LEAVES]: 0.3, [B.GLASS]: 0.4, [B.GRASS]: 0.6, [B.DIRT]: 0.6, [B.SAND]: 0.6,
+  [B.LAMP]: 0.8, [B.PLANKS]: 1.4, [B.WOOD]: 1.6, [B.COBBLE]: 2.4, [B.STONE]: 2.8,
+  [B.BRICK]: 3.2,
+  [B.GLASST]: 0.5, [B.GLASSG]: 0.5, [B.NEON]: 0.8, [B.NEONP]: 0.8,
+  [B.ASPHALT]: 2.4, [B.ROADLINE]: 2.4, [B.CONCRETE]: 2.8, [B.MARBLE]: 3.2, [B.STEEL]: 3.8,
+};
+export function blockHardness(type) { return HARDNESS[type] ?? 1.0; }
+
 // Marina City layout constants (kept in sync with world.js).
 export const GEN = { GROUND: 22, WORLD_HEIGHT: 48, PERIOD: 16, ROAD: 4, FOOT0: 6, FOOT1: 13 };
 const { GROUND, WORLD_HEIGHT, PERIOD, ROAD, FOOT0, FOOT1 } = GEN;
