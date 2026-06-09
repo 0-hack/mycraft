@@ -165,7 +165,7 @@ $('d-boss').onclick = () => deploy('boss');
 async function deploy(kind) {
   const n = kind === 'boss' ? 1 : (Number($('d-count').value) || 1);
   const res = await api('/api/admin/deploy', { method: 'POST', body: JSON.stringify({ kind, n }) });
-  msg('deploy-msg', res.deployed ? `Deployed ${res.deployed} ${kind}(s) — need a player online to anchor near.` : 'Nothing deployed (no players online?).', !!res.deployed);
+  msg('deploy-msg', res.deployed ? `Deployed ${res.deployed} ${kind}(s).` : 'Nothing deployed — at least one player must be online to anchor near.', !!res.deployed);
   load();
 }
 

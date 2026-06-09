@@ -932,10 +932,11 @@ export function attachGame(server) {
     return null;
   }
 
-  function spawnPickup(forceKind) {
+  function spawnPickup(forceKind, force = false) {
     const cfg = getSettings();
     const arr = [...clients.values()];
-    if (!arr.length || pickups.size >= cfg.pickupCap) return null;
+    if (!arr.length) return null;
+    if (!force && pickups.size >= cfg.pickupCap) return null;
     const kinds = Object.keys(PICKUP_KINDS).filter((k) =>
       (k === 'medkit' && cfg.medkitEnabled) || (k === 'food' && cfg.foodEnabled));
     if (forceKind && PICKUP_KINDS[forceKind]) kinds.length = 0, kinds.push(forceKind);
@@ -961,13 +962,16 @@ export function attachGame(server) {
   }
 
   // ---- monsters (PvE) ----------------------------------------------------
-  function spawnMob(forceType, capBonus = 0) {
+  function spawnMob(forceType, capBonus = 0, force = false) {
     const cfg = getSettings();
-    if (!cfg.mobEnabled) return null;
-    const arr = [...clients.values()].filter((c) => !c.dead);
+    if (!cfg.mobEnabled && !force) return null;
+    // A forced (admin) deploy can anchor near any connected player, even a
+    // momentarily dead one, and ignores the natural population cap below.
+    const arr = force ? [...clients.values()] : [...clients.values()].filter((c) => !c.dead);
     // Population scales with the number of online players (and night surge).
     const cap = Math.min(cfg.mobCap, arr.length * cfg.mobPerPlayer) + capBonus;
-    if (!arr.length || mobs.size >= cap) return null;
+    if (!arr.length) return null;
+    if (!force && mobs.size >= cap) return null;
     const anchor = arr[(Math.random() * arr.length) | 0].state;
     const type = forceType && MOB_TYPES[forceType] ? forceType : pickMobType();
     const def = MOB_TYPES[type];
@@ -1258,9 +1262,11 @@ export function attachGame(server) {
       let made = 0;
       for (let i = 0; i < n; i++) {
         let r;
-        if (kind === 'boss') r = spawnMob('boss', 999);           // bosses bypass the cap
-        else if (kind === 'mob' || MOB_TYPES[kind]) r = spawnMob(MOB_TYPES[kind] ? kind : undefined);
-        else r = spawnPickup(kind);
+        // Admin deploys force through the enable toggles and population caps;
+        // they only need a player online to anchor near.
+        if (kind === 'boss') r = spawnMob('boss', 999, true);
+        else if (kind === 'mob' || MOB_TYPES[kind]) r = spawnMob(MOB_TYPES[kind] ? kind : undefined, 0, true);
+        else r = spawnPickup(kind, true);
         if (r) made++;
       }
       return made;

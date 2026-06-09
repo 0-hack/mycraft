@@ -1929,6 +1929,7 @@ function showBoss(mob) {
   document.getElementById('boss-name').textContent = (MOB_TYPES[mob.type] || {}).name || 'Boss';
   document.getElementById('boss-fill').style.width = (mob.health / bossMax * 100) + '%';
   document.getElementById('boss-bar').classList.remove('hidden');
+  document.body.classList.add('boss-active'); // shifts toasts clear of the bar
   bossBanner('⚔️ ' + ((MOB_TYPES[mob.type] || {}).name || 'Boss') + ' has appeared!');
 }
 function updateBoss(health) {
@@ -1939,6 +1940,7 @@ function hideBoss(victory) {
   if (bossId == null) return;
   bossId = null;
   document.getElementById('boss-bar').classList.add('hidden');
+  document.body.classList.remove('boss-active');
   if (victory) bossBanner('🏆 Boss defeated!');
 }
 
