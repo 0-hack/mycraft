@@ -22,10 +22,10 @@ export const CONFIG = {
   // How often player state is flushed to disk while connected.
   AUTOSAVE_INTERVAL_MS: 15 * 1000,
   DATA_DIR: process.env.DATA_DIR || 'data',
-  // Collectible healing/food pickups scattered around players (defaults; the
+  // Collectible healing/food pickups scattered around the map (defaults; the
   // live values are admin-tunable via the settings table).
-  PICKUP_CAP: 14,
-  PICKUP_INTERVAL_MS: 7 * 1000,
+  PICKUP_CAP: 40,
+  PICKUP_INTERVAL_MS: 4 * 1000,
   // Bootstrap admin: the very first registered account becomes admin. A specific
   // admin username is honoured ONLY when explicitly set via the env var (so the
   // default name can't be claimed by anyone to escalate privileges).

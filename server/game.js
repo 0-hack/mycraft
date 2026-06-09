@@ -287,7 +287,9 @@ export function attachGame(server) {
             equipment: normalizeEquipment(safeParse(state.equipment, null)),
             canFly: !!ctx.canFly, dead: !!ctx.dead, shielded: isShielded(ctx) },
         }, ws);
-        for (let i = 0; i < 3; i++) spawnPickup();
+        // Stock the surrounding map so there's always a supply to walk to —
+        // top up toward the cap (bounded so a join can't spawn a huge burst).
+        for (let i = 0; i < 16 && pickups.size < getSettings().pickupCap; i++) spawnPickup();
         return;
       }
 
@@ -881,6 +883,33 @@ export function attachGame(server) {
   const pickups = new Map();
   let nextPickupId = 1;
 
+  // Find a reachable ground spot to drop a pickup, scattered across the whole
+  // region players currently occupy (their bounding box + a wide margin) rather
+  // than bunched around one player. Only accepts street / sidewalk / park / low
+  // building floors with head-room — never deep water, never a tall rooftop — so
+  // anything spawned is walkable-to on foot.
+  function findScatterSpot(arr) {
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const c of arr) {
+      const s = c.state;
+      if (s.x < minX) minX = s.x; if (s.x > maxX) maxX = s.x;
+      if (s.z < minZ) minZ = s.z; if (s.z > maxZ) maxZ = s.z;
+    }
+    const M = 60; // margin so pickups spread well beyond the players themselves
+    minX -= M; maxX += M; minZ -= M; maxZ += M;
+    for (let tries = 0; tries < 28; tries++) {
+      const x = round1(minX + Math.random() * (maxX - minX));
+      const z = round1(minZ + Math.random() * (maxZ - minZ));
+      const y = mobFeetY(x, z, GEN.WORLD_HEIGHT);
+      if (y < GEN.GROUND + 1 || y > GEN.GROUND + 5) continue; // skip water pits & tall roofs
+      const bx = Math.floor(x), bz = Math.floor(z);
+      if (getBlockType(bx, y - 1, bz) === 9) continue;        // standing on water
+      if (isSolidAt(bx, y, bz) || isSolidAt(bx, y + 1, bz)) continue; // need head-room
+      return { x, y, z };
+    }
+    return null;
+  }
+
   function spawnPickup(forceKind) {
     const cfg = getSettings();
     const arr = [...clients.values()];
@@ -889,16 +918,20 @@ export function attachGame(server) {
       (k === 'medkit' && cfg.medkitEnabled) || (k === 'food' && cfg.foodEnabled));
     if (forceKind && PICKUP_KINDS[forceKind]) kinds.length = 0, kinds.push(forceKind);
     if (!kinds.length) return null;
-    const anchor = arr[(Math.random() * arr.length) | 0].state;
     const kind = kinds[(Math.random() * kinds.length) | 0];
-    const ang = Math.random() * Math.PI * 2;
-    const r = 6 + Math.random() * 14;
-    const px = round1(anchor.x + Math.cos(ang) * r);
-    const pz = round1(anchor.z + Math.sin(ang) * r);
-    // Rest the pickup on the actual ground at (px,pz) — NOT at the anchor's
-    // height — so a player walking past at street level is at the same y and
-    // reliably collects it (floating pickups were impossible to reach on foot).
-    const py = mobFeetY(px, pz, GEN.WORLD_HEIGHT);
+    let px, py, pz;
+    const spot = findScatterSpot(arr);
+    if (spot) {
+      px = spot.x; py = spot.y; pz = spot.z;
+    } else {
+      // Fallback: drop near a random player, still grounded to the real surface.
+      const anchor = arr[(Math.random() * arr.length) | 0].state;
+      const ang = Math.random() * Math.PI * 2;
+      const r = 6 + Math.random() * 14;
+      px = round1(anchor.x + Math.cos(ang) * r);
+      pz = round1(anchor.z + Math.sin(ang) * r);
+      py = mobFeetY(px, pz, GEN.WORLD_HEIGHT);
+    }
     const p = { id: nextPickupId++, kind, x: px, y: py, z: pz };
     pickups.set(p.id, p);
     broadcast({ type: 'pickupSpawn', pickup: p });
@@ -1137,9 +1170,12 @@ export function attachGame(server) {
   let lastPickup = 0;
   setInterval(() => {
     const cfg = getSettings();
-    if (Date.now() - lastPickup >= cfg.pickupIntervalMs) {
-      if (spawnPickup()) lastPickup = Date.now();
-    }
+    if (Date.now() - lastPickup < cfg.pickupIntervalMs) return;
+    // Top up a few at a time so a high cap refills the map quickly instead of
+    // trickling one pickup every interval.
+    let spawned = 0;
+    for (let i = 0; i < 4 && pickups.size < cfg.pickupCap; i++) if (spawnPickup()) spawned++;
+    if (spawned) lastPickup = Date.now();
   }, 1000);
 
   // Regen / starvation derived from hunger.

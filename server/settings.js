@@ -35,9 +35,9 @@ const DEFAULTS = {
 
 // Per-difficulty presets applied to spawn rate + economy when difficulty changes.
 const PRESETS = {
-  easy:   { pickupCap: 20, pickupIntervalMs: 5000,  sellMultiplier: 1.5, mobCap: 5,  mobIntervalMs: 12000, mobPower: 0.8 },
-  normal: { pickupCap: 14, pickupIntervalMs: 7000,  sellMultiplier: 1,   mobCap: 8,  mobIntervalMs: 9000,  mobPower: 1 },
-  hard:   { pickupCap: 8,  pickupIntervalMs: 12000, sellMultiplier: 0.7, mobCap: 14, mobIntervalMs: 6000,  mobPower: 1.4 },
+  easy:   { pickupCap: 55, pickupIntervalMs: 3000, sellMultiplier: 1.5, mobCap: 5,  mobIntervalMs: 12000, mobPower: 0.8 },
+  normal: { pickupCap: 40, pickupIntervalMs: 4000, sellMultiplier: 1,   mobCap: 8,  mobIntervalMs: 9000,  mobPower: 1 },
+  hard:   { pickupCap: 24, pickupIntervalMs: 6000, sellMultiplier: 0.7, mobCap: 14, mobIntervalMs: 6000,  mobPower: 1.4 },
 };
 
 const NUMERIC = new Set([
