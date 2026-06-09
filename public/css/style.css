@@ -197,6 +197,12 @@ body.touch .cons-btn { width: var(--bs); height: var(--bs); font-size: calc(var(
 
 #death { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
   background: rgba(40,0,0,0.55); z-index: 30; }
+/* Blocks the whole screen when the session is taken over on another device. */
+#session-ended { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(6,9,18,0.92); z-index: 60; }
+#session-ended.hidden { display: none; }
+#session-ended .death-card { border-color: #3a5a86; max-width: 360px; }
+#session-ended .death-card button { background: #3a7bd5; }
 .death-card { background: rgba(15,22,40,0.95); border: 1px solid #803030; border-radius: 14px;
   padding: 28px; text-align: center; }
 .death-card h2 { font-size: 28px; margin-bottom: 8px; }

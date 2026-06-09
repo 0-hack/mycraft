@@ -389,16 +389,25 @@ function setupNetwork() {
     if (r) { r.painUntil = performance.now() + 450; setPainFace(r.group, true); }
   });
   net.on('chat', (msg) => ui.addChat(msg.name, msg.text, msg.system));
-  net.on('sessionReplaced', () => {
-    sessionEnded = true;
-    ui.toast('⚠️ You logged in on another device.\nThis session has ended.');
+  net.on('sessionReplaced', () => endSession());
+  net.on('disconnect', () => {
+    if (sessionEnded) { endSession(); return; }
+    ui.addChat('', 'Disconnected from server. Reconnecting…', true);
   });
-  net.on('disconnect', () => ui.addChat('',
-    sessionEnded ? 'Session ended — you logged in on another device.'
-                 : 'Disconnected from server. Reconnecting…', true));
 }
 
-let sessionEnded = false; // set when the server kicks us for a newer login
+// The server kicked us because the account signed in elsewhere: hard-stop this
+// session so two devices can't appear to play at once.
+let sessionEnded = false;
+function endSession() {
+  if (sessionEnded && document.getElementById('session-ended') && !document.getElementById('session-ended').classList.contains('hidden')) return;
+  sessionEnded = true;
+  if (player) { player.input = { forward: 0, strafe: 0, jump: false, sprint: false }; }
+  try { document.exitPointerLock?.(); } catch { /* ignore */ }
+  const el = document.getElementById('session-ended');
+  if (el) el.classList.remove('hidden');
+}
+
 let currentStats = defaultStats();
 function defaultStats() {
   return { score: 0, level: 1, xp: 0, nextLevelXp: 50, blocksMined: 0, blocksPlaced: 0, kills: 0, cash: 0, inventory: {}, equipment: defaultEquipment(), progress: defaultProgress('soldier') };
@@ -1134,6 +1143,7 @@ function setupInput() {
   refreshMusicBtn();
   refreshSpawnBtn();
   document.getElementById('btn-respawn').onclick = () => net.sendRespawn();
+  document.getElementById('btn-session-reload')?.addEventListener('click', () => location.reload());
   document.getElementById('btn-leaderboard').onclick = () =>
     ui.toggleLeaderboard(() => net.leaderboard());
   setupChat();
@@ -2175,6 +2185,7 @@ function updateGround(t) {
 // ---------------------------------------------------------------- game loop
 let last = performance.now();
 function loop(now) {
+  if (sessionEnded) return; // session taken over on another device: freeze the game
   requestAnimationFrame(loop);
   const dt = (now - last) / 1000;
   last = now;

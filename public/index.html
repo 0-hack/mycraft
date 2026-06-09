@@ -79,6 +79,16 @@
 
     <div id="toasts"></div>
 
+    <!-- Session ended (logged in on another device) -->
+    <div id="session-ended" class="hidden">
+      <div class="death-card">
+        <h2>🔒 Signed in elsewhere</h2>
+        <p>This account was just opened on another device. Only one session can be
+          active at a time, so this one has ended.</p>
+        <button id="btn-session-reload">Reload to take over</button>
+      </div>
+    </div>
+
     <!-- Death screen -->
     <div id="death" class="hidden">
       <div class="death-card">

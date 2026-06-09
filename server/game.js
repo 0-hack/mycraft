@@ -225,11 +225,13 @@ export function attachGame(server) {
         const existing = findByUserId(payload.id);
         if (existing) {
           existing.skipSave = true; // the incoming session owns the latest state
-          send(existing.ws, { type: 'chat', name: '', text: 'You logged in from another device — this session was disconnected.', system: true });
-          send(existing.ws, { type: 'sessionReplaced' });
-          try { existing.ws.close(); } catch { /* ignore */ }
-          clients.delete(existing.ws);
+          const oldWs = existing.ws;
+          send(oldWs, { type: 'sessionReplaced' });
+          clients.delete(oldWs);
           broadcast({ type: 'playerLeave', id: existing.netId });
+          try { oldWs.close(4001, 'session-replaced'); } catch { /* ignore */ }
+          // Force the old socket dead if it doesn't close promptly.
+          setTimeout(() => { try { if (oldWs.readyState !== oldWs.CLOSED) oldWs.terminate(); } catch { /* ignore */ } }, 1500);
         }
         const state = loadState(payload.id);
         // Marina City has a flat street level (y=22); rescue any player whose
