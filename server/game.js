@@ -127,6 +127,12 @@ export function attachGame(server) {
     }
   }
   const CRACK_RADIUS = 48; // only players this close see a block's cracks
+  // Tell everyone else to render a projectile flying from→to, so ranged/magic
+  // attacks & skills are visible from other players' point of view.
+  function broadcastShot(exceptWs, id, kind, a, b) {
+    if (!kind) return;
+    broadcast({ type: 'shot', id, kind, ax: a.x, ay: a.y, az: a.z, bx: b.x, by: b.y, bz: b.z }, exceptWs);
+  }
   function send(ws, obj) {
     if (ws.readyState === 1) ws.send(JSON.stringify(obj));
   }
@@ -329,6 +335,8 @@ export function attachGame(server) {
           const rolled = critize(prog, base);
           const eyeY = s.y + 1.6; // shooter's eye
           const reach = w.reach * rangeMult(prog, w.cat); // ranged/magic range grows with dex/int
+          const eye = { x: s.x, y: eyeY, z: s.z };
+          const kind = shotKind(w);
           if (msg.targetType === 'mob') {
             const m = mobs.get(msg.target);
             if (!m) break;
@@ -336,6 +344,7 @@ export function attachGame(server) {
             if (Math.hypot(m.x - s.x, m.y - s.y, m.z - s.z) > reach + REACH_SLACK) break;
             const mh = (MOB_TYPES[m.type] || MOB_TYPES.slime).height;
             if (losBlocked(s.x, eyeY, s.z, m.x, m.y + mh * 0.6, m.z)) break; // no hitting through walls
+            broadcastShot(ws, ctx.netId, kind, eye, { x: m.x, y: m.y + mh * 0.6, z: m.z });
             hurtMob(m, Math.round(rolled.dmg), ctx, rolled.crit ? 'crit' : 'hit');
             break;
           }
@@ -346,6 +355,7 @@ export function attachGame(server) {
           if (Math.abs(ts.y - s.y) > VERT_LIMIT) break; // only same-level players can be hit
           const dist = Math.hypot(ts.x - s.x, ts.y - s.y, ts.z - s.z);
           if (dist > reach + REACH_SLACK) break;
+          broadcastShot(ws, ctx.netId, kind, eye, { x: ts.x, y: ts.y + 1.0, z: ts.z });
           if (losBlocked(s.x, eyeY, s.z, ts.x, ts.y + 1.0, ts.z)) break; // no hitting through walls
           const def = defenseOf(safeParse(ts.equipment, null)) + defenseBonus(safeParse(ts.progress, null)) + buffMult(target, 'def', 0);
           applyDamage(target, mitigate(rolled.dmg, def), ctx, 'combat', rolled.crit ? 'crit' : undefined);
@@ -734,7 +744,7 @@ export function attachGame(server) {
     if (now - (ctx.skillCd[skill.id] || 0) < skill.cd * cfg.skillCdMult) return;
     ctx.skillCd[skill.id] = now;
     const s = ctx.state;
-    broadcast({ type: 'skillFx', id: ctx.netId, skill: skill.id, kind: skill.kind, x: s.x, y: s.y, z: s.z }, ws);
+    broadcast({ type: 'skillFx', id: ctx.netId, skill: skill.id, kind: skill.kind, dur: skill.duration || 0, x: s.x, y: s.y, z: s.z }, ws);
     const val = skill.base + lvl * skill.per;
     const nukeRange = 36 * cfg.skillRangeMult;
 
@@ -742,15 +752,20 @@ export function attachGame(server) {
     if (skill.kind === 'nuke') {
       const r = critize(p, basePower); const fx = r.crit ? 'crit' : 'skill'; const power = Math.round(r.dmg);
       const eyeY = s.y + 1.6;
+      const skKind = skill.id === 'powershot' ? 'powerarrow' : skill.id === 'headshot' ? 'gunbeam' : skill.id === 'fireball' ? 'fireorb' : null;
       if (msg.targetType === 'mob') {
         const m = mobs.get(msg.target);
         const mh = m ? (MOB_TYPES[m.type] || MOB_TYPES.slime).height : 1;
         if (m && Math.abs(m.y - s.y) <= VERT_LIMIT && dist3(s, m) <= nukeRange &&
-            !losBlocked(s.x, eyeY, s.z, m.x, m.y + mh * 0.6, m.z)) { applyStatuses(m.effects, skill.status, lvl, ctx.netId); hurtMob(m, power, ctx, fx); }
+            !losBlocked(s.x, eyeY, s.z, m.x, m.y + mh * 0.6, m.z)) {
+          broadcastShot(ws, ctx.netId, skKind, { x: s.x, y: eyeY, z: s.z }, { x: m.x, y: m.y + mh * 0.6, z: m.z });
+          applyStatuses(m.effects, skill.status, lvl, ctx.netId); hurtMob(m, power, ctx, fx);
+        }
       } else {
         let t = null; for (const c of clients.values()) if (c.netId === msg.target) t = c;
         if (t && t !== ctx && !t.dead && Math.abs(t.state.y - s.y) <= VERT_LIMIT && dist3(s, t.state) <= nukeRange &&
             !losBlocked(s.x, eyeY, s.z, t.state.x, t.state.y + 1.0, t.state.z)) {
+          broadcastShot(ws, ctx.netId, skKind, { x: s.x, y: eyeY, z: s.z }, { x: t.state.x, y: t.state.y + 1.0, z: t.state.z });
           const def = defenseOf(safeParse(t.state.equipment, null)) + defenseBonus(safeParse(t.state.progress, null)) + buffMult(t, 'def', 0);
           applyPlayerStatus(t, skill.status, lvl, ctx.netId);
           applyDamage(t, mitigate(power, def), ctx, 'combat', r.crit ? 'crit' : undefined);
@@ -1252,6 +1267,14 @@ function materialCount(materials) {
 function safeParse(str, fallback) {
   if (typeof str !== 'string') return str || fallback;
   try { return JSON.parse(str); } catch { return fallback; }
+}
+
+// What projectile a basic attack with this weapon looks like (null = melee).
+function shotKind(w) {
+  if (w.id === 'bow') return 'arrow';
+  if (w.cat === 'magic') return 'wandorb';
+  if (w.cat === 'ranged') return 'tracer';
+  return null;
 }
 
 // Is the line from (ax,ay,az) to (bx,by,bz) blocked by a solid block before it

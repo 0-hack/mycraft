@@ -281,7 +281,7 @@ function setupNetwork() {
   net.on('craftFail', () => ui.toast('Not enough cash or materials.'));
   net.on('levelup', (msg) => { ui.toast(`⭐ Level ${msg.level}!\n+2 attribute & +1 skill point — open 🎒 Bag`); audio.play('level'); });
   net.on('skillFx', (msg) => {
-    remoteSkillEffect(msg.skill, msg.kind, new THREE.Vector3(msg.x, msg.y, msg.z));
+    remoteSkillEffect(msg.skill, msg.kind, new THREE.Vector3(msg.x, msg.y, msg.z), msg.id, msg.dur);
   });
   net.on('buff', (msg) => {
     if (msg.stat === 'speed') {
@@ -372,6 +372,9 @@ function setupNetwork() {
   net.on('playerSwing', (msg) => {
     const r = remotePlayers.get(msg.id);
     if (r) r.swing = 1; // animation progress, decays in the loop
+  });
+  net.on('shot', (msg) => { // another player's projectile, rendered so we see it fly
+    renderShot(msg.kind, new THREE.Vector3(msg.ax, msg.ay, msg.az), new THREE.Vector3(msg.bx, msg.by, msg.bz));
   });
   net.on('playerFly', (msg) => {
     const r = remotePlayers.get(msg.id);
@@ -695,62 +698,68 @@ function repairSparks(pos) {
   }, i * 18);
 }
 
-// ---- sustained auras that follow the local player for a buff's duration ----
-const activeAuras = []; // { group, until, update(now) }
-function addAura(durationMs, group, update) {
+// ---- sustained auras that follow a player (local or remote) for a duration ----
+const activeAuras = []; // { group, until, update(now), follow() -> {x,y,z}|null }
+function addAura(durationMs, group, update, follow) {
   if (!scene) return;
+  follow = follow || (() => (player ? player.pos : null)); // defaults to the local player
   scene.add(group);
-  activeAuras.push({ group, until: performance.now() + durationMs, update });
+  activeAuras.push({ group, until: performance.now() + durationMs, update, follow });
 }
 function updateAuras(now) {
   for (let i = activeAuras.length - 1; i >= 0; i--) {
     const a = activeAuras[i];
-    if (now > a.until || !player) { scene.remove(a.group); disposeGroup(a.group); activeAuras.splice(i, 1); continue; }
-    a.group.position.set(player.pos.x, player.pos.y, player.pos.z);
+    const p = a.follow();
+    if (now > a.until || !p) { scene.remove(a.group); disposeGroup(a.group); activeAuras.splice(i, 1); continue; }
+    a.group.position.set(p.x, p.y, p.z);
     a.update(now, a.group);
   }
 }
+// Position-getter for a remote player's avatar (used to follow them with auras).
+function remoteFollow(id) {
+  return () => { const r = remotePlayers.get(id); return r && r.group && r.group.visible ? r.group.position : null; };
+}
 // Soldier War Cry — a rotating golden guard sigil (two counter-spun rune rings).
-function guardAura(durationMs) {
+function guardAura(durationMs, follow) {
   const g = new THREE.Group();
   for (const [r, dir] of [[0.7, 1], [0.95, -1]]) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.05, 6, 6), bmat(0xffcf5a, 0.75)); // hex
     ring.rotation.x = -Math.PI / 2; ring.userData.dir = dir; ring.position.y = 0.1 + (r - 0.7); g.add(ring);
   }
-  addAura(durationMs, g, (now) => { for (const c of g.children) c.rotation.z = (now / 600) * c.userData.dir; });
+  addAura(durationMs, g, (now) => { for (const c of g.children) c.rotation.z = (now / 600) * c.userData.dir; }, follow);
 }
 // Soldier Charge — bright dash streaks trailing behind you.
-function chargeTrail(durationMs) {
+function chargeTrail(durationMs, follow) {
   const g = new THREE.Group();
   for (let i = 0; i < 8; i++) { const s = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.7), bmat(0xbfe3ff, 0.6)); s.userData.i = i; g.add(s); }
   addAura(durationMs, g, (now) => g.children.forEach((c, i) => {
     const a = (i / 8) * Math.PI * 2 + now / 200; c.position.set(Math.cos(a) * 0.45, 0.4 + Math.sin(now / 120 + i) * 0.4, Math.sin(a) * 0.45); c.rotation.y = a;
-  }));
+  }), follow);
 }
 // Archer Dodge — quick translucent after-images of a ring (agile blur).
-function dodgeBlur(durationMs) {
+function dodgeBlur(durationMs, follow) {
   const g = new THREE.Group();
   for (let i = 0; i < 3; i++) { const r = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.42, 20), bmat(0x9affc0, 0.5)); r.rotation.x = -Math.PI / 2; r.userData.i = i; g.add(r); }
-  addAura(durationMs, g, (now) => g.children.forEach((c, i) => { c.position.y = 0.1 + ((now / 500 + i / 3) % 1) * 1.6; c.material.opacity = 0.5 * (1 - ((now / 500 + i / 3) % 1)); }));
+  addAura(durationMs, g, (now) => g.children.forEach((c, i) => { c.position.y = 0.1 + ((now / 500 + i / 3) % 1) * 1.6; c.material.opacity = 0.5 * (1 - ((now / 500 + i / 3) % 1)); }), follow);
 }
 // Gunman Adrenaline — a throbbing red surge (heartbeat) with rising embers.
-function adrenalineAura(durationMs) {
+function adrenalineAura(durationMs, follow) {
   const g = new THREE.Group();
   const core = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 12), bmat(0xff4d4d, 0.22)); core.position.y = 1; g.add(core);
   for (let i = 0; i < 6; i++) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), bmat(0xff9a4d, 0.9)); e.userData.a = (i / 6) * 6.28; g.add(e); }
   addAura(durationMs, g, (now) => {
     const beat = 0.85 + Math.abs(Math.sin(now / 180)) * 0.5; core.scale.setScalar(beat);
     g.children.forEach((c, i) => { if (i === 0) return; const a = c.userData.a + now / 250; c.position.set(Math.cos(a) * 0.55, 0.4 + ((now / 350 + c.userData.a) % 1) * 1.1, Math.sin(a) * 0.55); });
-  });
+  }, follow);
 }
 // Artisan Fortify — a hexagonal shield dome that shimmers around you.
-function hexShield(durationMs) {
+function hexShield(durationMs, follow) {
   const g = new THREE.Group();
   const dome = new THREE.Mesh(new THREE.IcosahedronGeometry(1.0, 1), new THREE.MeshBasicMaterial({ color: 0x6fd0ff, transparent: true, opacity: 0.18, wireframe: true, depthWrite: false }));
   dome.position.y = 1; g.add(dome);
   const dome2 = new THREE.Mesh(new THREE.IcosahedronGeometry(1.05, 1), new THREE.MeshBasicMaterial({ color: 0xbfeaff, transparent: true, opacity: 0.1, depthWrite: false }));
   dome2.position.y = 1; g.add(dome2);
-  addAura(durationMs, g, (now) => { dome.rotation.y = now / 1200; dome.rotation.x = now / 2400; const p = 1 + Math.sin(now / 200) * 0.04; dome.scale.setScalar(p); dome2.scale.setScalar(p); });
+  addAura(durationMs, g, (now) => { dome.rotation.y = now / 1200; dome.rotation.x = now / 2400; const p = 1 + Math.sin(now / 200) * 0.04; dome.scale.setScalar(p); dome2.scale.setScalar(p); }, follow);
 }
 
 // Dispatch the LOCAL cast visual for a skill (caller has already validated it).
@@ -781,24 +790,27 @@ function castSkillEffect(sk, lvl, target) {
   }
 }
 
-// Positional version of an effect, for OTHER players' casts (skillFx broadcast).
-function remoteSkillEffect(skillId, kind, pos) {
+// Effect for ANOTHER player's cast (skillFx broadcast). AoE/heal play at their
+// position; buffs attach a sustained aura that follows their avatar; nuke
+// projectiles arrive via the separate 'shot' message (here just a muzzle flash).
+function remoteSkillEffect(skillId, kind, pos, id, dur) {
+  const up = (y) => pos.clone().add(new THREE.Vector3(0, y, 0));
+  const follow = remoteFollow(id);
   switch (skillId) {
     case 'cleave': slashArc(pos, 3.5); break;
-    case 'warcry': shockRings(pos, 0xffcf5a); break;
-    case 'charge': spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xbfe3ff); break;
+    case 'warcry': shockRings(pos, 0xffcf5a); guardAura(dur || 6000, follow); break;
+    case 'charge': spawnBurst(up(0.5), 0xbfe3ff); chargeTrail(dur || 3000, follow); break;
     case 'volley': spawnFallingArrows(pos, 4.5); break;
-    case 'dodge': spawnRing(pos, 1.2, 0x9affc0); break;
+    case 'dodge': dodgeBlur(dur || 2500, follow); break;
     case 'grenade': explosion(pos, { core: 0xffb14d, big: true }); break;
-    case 'adrenaline': spawnBurst(pos.clone().add(new THREE.Vector3(0, 1, 0)), 0xff5a3a); break;
+    case 'adrenaline': spawnBurst(up(1), 0xff5a3a); adrenalineAura(dur || 6000, follow); break;
     case 'frostnova': iceNova(pos, 5); break;
     case 'heal': healColumn(pos); break;
     case 'bomb': explosion(pos, { core: 0xff7a2a, big: true }); break;
     case 'repair': repairSparks(pos); break;
-    case 'fortify': spawnRing(pos, 1.6, 0x6fd0ff); break;
-    case 'powershot': case 'headshot': spawnBurst(pos.clone().add(new THREE.Vector3(0, 1.4, 0)), 0xfff2a0); break;
-    case 'fireball': spawnBurst(pos.clone().add(new THREE.Vector3(0, 1.4, 0)), 0xff7a2a); break;
-    default: if (kind === 'aoe') spawnRing(pos, 4, 0xffaa55); else spawnRing(pos.clone().add(new THREE.Vector3(0, 1, 0)), 1.2, 0xffffff);
+    case 'fortify': spawnRing(pos, 1.6, 0x6fd0ff); hexShield(dur || 8000, follow); break;
+    case 'powershot': case 'headshot': case 'fireball': spawnBurst(up(1.4), skillId === 'fireball' ? 0xff7a2a : 0xfff2a0); break;
+    default: if (kind === 'aoe') spawnRing(pos, 4, 0xffaa55); else spawnRing(up(1), 1.2, 0xffffff);
   }
 }
 
@@ -1647,6 +1659,19 @@ function fadeOutGroup(g) {
   const tick = () => { t += 0.05; g.traverse((o) => { if (o.material) { o.material.transparent = true; o.material.opacity = 1 - t / 0.3; } });
     if (t < 0.3) requestAnimationFrame(tick); else { scene.remove(g); disposeGroup(g); } };
   requestAnimationFrame(tick);
+}
+
+// Render a projectile (from another player's attack/skill) flying from→to.
+function renderShot(kind, from, to) {
+  const dir = to.clone().sub(from); const dist = dir.length() + 2;
+  switch (kind) {
+    case 'arrow': shootArrow(from, dir, { to, maxDist: dist, speed: 34 }); break;
+    case 'powerarrow': shootArrow(from, dir, { to, maxDist: dist, speed: 40, power: true }); break;
+    case 'wandorb': shootProjectile(from, dir, 0xc98bff, { to, size: 0.3, maxDist: dist, speed: 18 }); break;
+    case 'fireorb': shootProjectile(from, dir, 0xff7a2a, { to, size: 0.45, maxDist: dist, speed: 15 }); break;
+    case 'gunbeam': gunBeam(from, to); break;
+    case 'tracer': shootTracer(from, to, 0xffee88); break;
+  }
 }
 
 // World-space aim direction from the camera (the way the player is pointing).
