@@ -270,11 +270,7 @@ function setupNetwork() {
   net.on('craftFail', () => ui.toast('Not enough cash or materials.'));
   net.on('levelup', (msg) => { ui.toast(`⭐ Level ${msg.level}!\n+2 attribute & +1 skill point — open 🎒 Bag`); audio.play('level'); });
   net.on('skillFx', (msg) => {
-    const pos = new THREE.Vector3(msg.x, msg.y, msg.z);
-    if (msg.skill === 'volley') spawnFallingArrows(pos, 4.5);             // archer rain of arrows
-    else if (msg.kind === 'aoe') spawnRing(pos, 4, 0xffaa55);
-    else if (msg.kind === 'buff') { spawnRing(pos, 1.6, 0xffe066); spawnBurst(pos.clone().add(new THREE.Vector3(0, 1, 0)), 0xffe066); }
-    else spawnRing(pos.add(new THREE.Vector3(0, 1, 0)), 1.2, 0xffffff);
+    remoteSkillEffect(msg.skill, msg.kind, new THREE.Vector3(msg.x, msg.y, msg.z));
   });
   net.on('buff', (msg) => {
     if (msg.stat === 'speed') {
@@ -283,7 +279,7 @@ function setupNetwork() {
       clearTimeout(_buffTimer);
       _buffTimer = setTimeout(() => { myBuffSpeed = 1; recomputeDerived(); }, msg.duration);
       ui.toast(msg.value < 1 ? '🥶 Slowed!' : '💨 Speed boost!');
-      if (msg.value > 1) showSpeedAura(msg.duration); // surrounding aura while boosted
+      // (The boost's surrounding aura is shown by the skill's own cast effect.)
     }
   });
   net.on('respawn', (msg) => {
@@ -462,26 +458,14 @@ function useSkillSlot(slot) {
   const now = performance.now();
   if (now < (skillReady[sk.id] || 0)) return; // on cooldown
   skillReady[sk.id] = now + sk.cd * tuning.skillCdMult;
+  // Single-target skills (nukes) need a target id for the server.
   let target = null, tt = null;
   if (sk.kind === 'nuke') {
     const t = findTarget({ reach: 36 * tuning.skillRangeMult, type: 'ranged', cat: sk.cat });
-    if (t) target = t.id, tt = t.kind;
-    const from = camera.position.clone().addScaledVector(aimDirection(), 0.8);
-    const dir = (t && t.point) ? t.point.clone().sub(from) : aimDirection();
-    if (sk.cat === 'magic') {
-      // Fireball: a big glowing orb that homes onto a target or fades.
-      shootProjectile(from, aimDirection(), skillColor(sk),
-        { to: t && t.point ? t.point.clone() : null, size: 0.45, maxDist: 30, speed: 15 });
-    } else if (sk.id === 'powershot') {
-      // Power Shot: a shiny, oversized arrow — clearly stronger than a normal shot.
-      shootArrow(from, dir, { to: t && t.point ? t.point.clone() : null, maxDist: 36 * tuning.skillRangeMult, speed: 40, power: true });
-    } else if (t && t.point) {
-      shootTracer(camera.position.clone(), t.point, skillColor(sk));
-    }
-  } else if (sk.kind === 'aoe') {
-    const rad = (sk.radius || 4) + lvl * 0.4;
-    if (sk.id === 'volley') spawnFallingArrows(player.pos.clone(), rad);   // archer: rain of arrows
-    else spawnRing(player.pos.clone(), rad, skillColor(sk));
+    if (t) { target = t.id; tt = t.kind; }
+    castSkillEffect(sk, lvl, t);
+  } else {
+    castSkillEffect(sk, lvl, null);
   }
   ownSwing = 1;
   audio.play(sk.kind === 'heal' ? 'heal' : sk.kind === 'buff' ? 'skillBuff'
@@ -547,41 +531,263 @@ function spawnFallingArrows(center, radius, color = 0xffcf66) {
   }
 }
 
-// Golden speed aura that follows the player while a speed buff is active.
-let speedAura = null, speedAuraUntil = 0;
-function showSpeedAura(durationMs) {
+// ---------------------------------------------------------------- skill FX
+// A small library of distinctive, reusable effects. Each class's skills compose
+// these into something recognisable (no shared look between classes).
+
+// Generic transient mesh that fades+grows then disposes.
+function fx(mesh, { life = 0.5, grow = 0, spin = 0, rise = 0, fade = true } = {}) {
   if (!scene) return;
-  speedAuraUntil = performance.now() + durationMs;
-  if (!speedAura) {
-    speedAura = new THREE.Group();
-    for (const r of [0.55, 0.8]) {
-      const ring = new THREE.Mesh(new THREE.RingGeometry(r, r + 0.08, 28),
-        new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.7, side: THREE.DoubleSide }));
-      ring.rotation.x = -Math.PI / 2; ring.userData.r = r; speedAura.add(ring);
-    }
-    for (let i = 0; i < 6; i++) { // upward speed streaks
-      const s = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.5, 0.04),
-        new THREE.MeshBasicMaterial({ color: 0xfff0a0, transparent: true, opacity: 0.6 }));
-      s.userData.a = (i / 6) * Math.PI * 2; speedAura.add(s);
-    }
-    scene.add(speedAura);
-  }
-  speedAura.visible = true;
+  scene.add(mesh);
+  let t = 0; const o0 = mesh.material.opacity ?? 1;
+  const tick = () => {
+    t += 0.016;
+    const k = t / life;
+    if (grow) mesh.scale.setScalar((mesh.userData.s0 || 1) * (1 + k * grow));
+    if (spin) mesh.rotation.z += spin * 0.016;
+    if (rise) mesh.position.y += rise * 0.016;
+    if (fade) mesh.material.opacity = Math.max(0, o0 * (1 - k));
+    if (t < life) requestAnimationFrame(tick);
+    else { scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
+  };
+  requestAnimationFrame(tick);
 }
-function updateSpeedAura(now) {
-  if (!speedAura) return;
-  if (now > speedAuraUntil) { speedAura.visible = false; return; }
-  if (!player) return;
-  speedAura.visible = true;
-  speedAura.position.set(player.pos.x, player.pos.y + 0.08, player.pos.z);
-  speedAura.rotation.y = now / 400;
-  const pulse = 1 + Math.sin(now / 120) * 0.08;
-  for (const c of speedAura.children) {
-    if (c.userData.r != null) c.scale.setScalar(pulse);
-    else { // streaks circle and bob upward
-      const a = c.userData.a + now / 300;
-      c.position.set(Math.cos(a) * 0.7, 0.3 + ((now / 400 + c.userData.a) % 1) * 0.8, Math.sin(a) * 0.7);
-    }
+const bmat = (c, o = 1) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, side: THREE.DoubleSide, depthWrite: false });
+
+// Soldier — Cleave: a whirling blade arc that sweeps all the way around you.
+function slashArc(pos, radius) {
+  for (let s = 0; s < 2; s++) {
+    const arc = new THREE.Mesh(new THREE.RingGeometry(radius * 0.45, radius, 40, 1, 0, Math.PI * 0.7), bmat(0xeef3ff, 0.85));
+    arc.rotation.x = -Math.PI / 2; arc.position.set(pos.x, pos.y + 0.6, pos.z);
+    scene.add(arc);
+    let t = 0; const dir = s ? -1 : 1, start = s ? Math.PI : 0;
+    const tick = () => { t += 0.016; arc.rotation.z = start + dir * t * 14; arc.material.opacity = 0.85 * (1 - t / 0.45);
+      arc.scale.setScalar(1 + t * 0.6);
+      if (t < 0.45) requestAnimationFrame(tick); else { scene.remove(arc); arc.geometry.dispose(); arc.material.dispose(); } };
+    requestAnimationFrame(tick);
+  }
+  for (let i = 0; i < 7; i++) spawnSpark(pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * radius, 0.6 + Math.random(), (Math.random() - 0.5) * radius)), 0xcfe0ff);
+}
+
+// Expanding concentric shock rings (Soldier War Cry cast burst).
+function shockRings(pos, color) {
+  for (let i = 0; i < 3; i++) setTimeout(() => {
+    if (!scene) return;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.06, 8, 32), bmat(color, 0.8));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(pos.x, pos.y + 0.2, pos.z); ring.userData.s0 = 1;
+    fx(ring, { life: 0.6, grow: 8 });
+  }, i * 110);
+}
+
+// Mage — Frost Nova: a ring of ice spikes erupting from the ground + frost mist.
+function iceNova(pos, radius) {
+  spawnRing(pos.clone(), radius, 0x9fe8ff);
+  const N = Math.round(10 + radius * 2);
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2, rr = radius * (0.5 + Math.random() * 0.5);
+    const x = pos.x + Math.cos(a) * rr, z = pos.z + Math.sin(a) * rr;
+    const h = 0.8 + Math.random() * 1.4;
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.18, h, 5), bmat(0xbff0ff, 0.9));
+    spike.position.set(x, pos.y - h, z); spike.rotation.y = Math.random() * 3;
+    scene.add(spike);
+    let t = 0; const targetY = pos.y + h * 0.4;
+    const tick = () => { t += 0.016; const k = Math.min(1, t / 0.18);
+      spike.position.y = (pos.y - h) + (targetY - (pos.y - h)) * k;
+      if (t > 0.45) spike.material.opacity = Math.max(0, 0.9 * (1 - (t - 0.45) / 0.5));
+      if (t < 0.95) requestAnimationFrame(tick); else { scene.remove(spike); spike.geometry.dispose(); spike.material.dispose(); } };
+    requestAnimationFrame(tick);
+  }
+  const mist = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.9, 16, 12), bmat(0xcdeeff, 0.28));
+  mist.position.set(pos.x, pos.y + 0.8, pos.z); mist.userData.s0 = 1; fx(mist, { life: 0.7, grow: 0.6 });
+}
+
+// A fiery / smoky explosion (Gunman Grenade, Artisan Bomb).
+function explosion(pos, { core = 0xffb14d, ring = 0xffd27f, smoke = 0x554c44, big = true } = {}) {
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(big ? 0.5 : 0.35, 16, 12), bmat(core, 0.95));
+  ball.position.copy(pos); ball.userData.s0 = 1; fx(ball, { life: 0.4, grow: big ? 6 : 4 });
+  const r = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.08, 8, 28), bmat(ring, 0.8));
+  r.rotation.x = -Math.PI / 2; r.position.copy(pos); r.userData.s0 = 1; fx(r, { life: 0.55, grow: big ? 9 : 6 });
+  for (let i = 0; i < (big ? 14 : 9); i++) {
+    const deb = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.12), bmat(i % 2 ? smoke : core, 0.9));
+    deb.position.copy(pos);
+    const v = new THREE.Vector3((Math.random() - 0.5) * 8, Math.random() * 6 + 2, (Math.random() - 0.5) * 8);
+    scene.add(deb); let t = 0;
+    const tick = () => { t += 0.016; v.y -= 16 * 0.016; deb.position.addScaledVector(v, 0.016); deb.rotation.x += 0.2; deb.rotation.y += 0.2;
+      deb.material.opacity = Math.max(0, 0.9 * (1 - t / 0.7));
+      if (t < 0.7) requestAnimationFrame(tick); else { scene.remove(deb); deb.geometry.dispose(); deb.material.dispose(); } };
+    requestAnimationFrame(tick);
+  }
+}
+
+// Lob a small object from `from` up and over to `to`, then call onLand.
+function lob(from, to, color, onLand) {
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), bmat(color, 1));
+  const fuse = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), bmat(0xffd27f, 1)); fuse.position.y = 0.18; ball.add(fuse);
+  ball.position.copy(from); scene.add(ball);
+  let t = 0; const T = 0.5; const peak = Math.max(from.y, to.y) + 2.5;
+  const tick = () => { t += 0.016; const k = Math.min(1, t / T);
+    ball.position.x = from.x + (to.x - from.x) * k;
+    ball.position.z = from.z + (to.z - from.z) * k;
+    ball.position.y = (1 - k) * from.y + k * to.y + Math.sin(k * Math.PI) * (peak - Math.max(from.y, to.y));
+    ball.rotation.x += 0.3; ball.rotation.z += 0.2;
+    if (k < 1) requestAnimationFrame(tick);
+    else { scene.remove(ball); ball.geometry.dispose(); ball.material.dispose(); onLand && onLand(); } };
+  requestAnimationFrame(tick);
+}
+
+// Gunman — Headshot: a precise bright beam + muzzle flash + lock reticle + ping.
+function gunBeam(from, to) {
+  shootTracer(from.clone(), to.clone(), 0xfff2a0);
+  const flash = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), bmat(0xfff7c0, 0.95)); flash.position.copy(from); flash.userData.s0 = 1; fx(flash, { life: 0.18, grow: 2 });
+  // lock reticle at the target
+  const ret = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.6, 24), bmat(0xff5a5a, 0.95));
+  ret.position.copy(to); ret.lookAt(camera.position); ret.userData.s0 = 1.6;
+  scene.add(ret); ret.scale.setScalar(1.6);
+  let t = 0; const tick = () => { t += 0.016; ret.scale.setScalar(1.6 - t * 4); ret.material.opacity = Math.max(0, 0.95 * (1 - t / 0.25));
+    if (t < 0.25) requestAnimationFrame(tick); else { scene.remove(ret); ret.geometry.dispose(); ret.material.dispose(); spawnBurst(to.clone(), 0xfff2a0); } };
+  requestAnimationFrame(tick);
+}
+
+// Mage — Heal: a soft column of green light with rising motes + a halo.
+function healColumn(pos, color = 0x8effb0) {
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 2.4, 16, 1, true), bmat(color, 0.4));
+  col.position.set(pos.x, pos.y + 1.2, pos.z); col.userData.s0 = 1; fx(col, { life: 0.8, grow: 0.3 });
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.05, 8, 24), bmat(0xeaffe0, 0.9)); halo.rotation.x = -Math.PI / 2; halo.position.set(pos.x, pos.y + 0.1, pos.z); halo.userData.s0 = 1; fx(halo, { life: 0.7, grow: 1.4 });
+  for (let i = 0; i < 16; i++) setTimeout(() => {
+    if (!scene) return;
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), bmat(color, 0.95));
+    m.position.set(pos.x + (Math.random() - 0.5) * 1.1, pos.y + Math.random() * 0.3, pos.z + (Math.random() - 0.5) * 1.1);
+    scene.add(m); let t = 0;
+    const tick = () => { t += 0.016; m.position.y += 0.03; m.material.opacity = Math.max(0, 0.95 * (1 - t / 0.7));
+      if (t < 0.7) requestAnimationFrame(tick); else { scene.remove(m); m.geometry.dispose(); m.material.dispose(); } };
+    requestAnimationFrame(tick);
+  }, i * 30);
+}
+
+// Artisan — Repair: orange mechanical sparks + spinning bolts (no magic glow).
+function repairSparks(pos) {
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.04, 6, 6), bmat(0xc9c2b4, 0.9)); // hex "gear"
+  ring.rotation.x = -Math.PI / 2; ring.position.set(pos.x, pos.y + 1.0, pos.z);
+  scene.add(ring); let tr = 0;
+  const spin = () => { tr += 0.016; ring.rotation.z += 0.25; ring.material.opacity = Math.max(0, 0.9 * (1 - tr / 0.8));
+    if (tr < 0.8) requestAnimationFrame(spin); else { scene.remove(ring); ring.geometry.dispose(); ring.material.dispose(); } };
+  requestAnimationFrame(spin);
+  for (let i = 0; i < 22; i++) setTimeout(() => {
+    if (!scene) return;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05), bmat(Math.random() < 0.5 ? 0xffb24d : 0xfff0a0, 1));
+    m.position.set(pos.x, pos.y + 0.9 + Math.random() * 0.4, pos.z);
+    const v = new THREE.Vector3((Math.random() - 0.5) * 5, Math.random() * 3, (Math.random() - 0.5) * 5);
+    scene.add(m); let t = 0;
+    const tick = () => { t += 0.016; v.y -= 14 * 0.016; m.position.addScaledVector(v, 0.016); m.material.opacity = Math.max(0, 1 - t / 0.45);
+      if (t < 0.45) requestAnimationFrame(tick); else { scene.remove(m); m.geometry.dispose(); m.material.dispose(); } };
+    requestAnimationFrame(tick);
+  }, i * 18);
+}
+
+// ---- sustained auras that follow the local player for a buff's duration ----
+const activeAuras = []; // { group, until, update(now) }
+function addAura(durationMs, group, update) {
+  if (!scene) return;
+  scene.add(group);
+  activeAuras.push({ group, until: performance.now() + durationMs, update });
+}
+function updateAuras(now) {
+  for (let i = activeAuras.length - 1; i >= 0; i--) {
+    const a = activeAuras[i];
+    if (now > a.until || !player) { scene.remove(a.group); disposeGroup(a.group); activeAuras.splice(i, 1); continue; }
+    a.group.position.set(player.pos.x, player.pos.y, player.pos.z);
+    a.update(now, a.group);
+  }
+}
+// Soldier War Cry — a rotating golden guard sigil (two counter-spun rune rings).
+function guardAura(durationMs) {
+  const g = new THREE.Group();
+  for (const [r, dir] of [[0.7, 1], [0.95, -1]]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.05, 6, 6), bmat(0xffcf5a, 0.75)); // hex
+    ring.rotation.x = -Math.PI / 2; ring.userData.dir = dir; ring.position.y = 0.1 + (r - 0.7); g.add(ring);
+  }
+  addAura(durationMs, g, (now) => { for (const c of g.children) c.rotation.z = (now / 600) * c.userData.dir; });
+}
+// Soldier Charge — bright dash streaks trailing behind you.
+function chargeTrail(durationMs) {
+  const g = new THREE.Group();
+  for (let i = 0; i < 8; i++) { const s = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.7), bmat(0xbfe3ff, 0.6)); s.userData.i = i; g.add(s); }
+  addAura(durationMs, g, (now) => g.children.forEach((c, i) => {
+    const a = (i / 8) * Math.PI * 2 + now / 200; c.position.set(Math.cos(a) * 0.45, 0.4 + Math.sin(now / 120 + i) * 0.4, Math.sin(a) * 0.45); c.rotation.y = a;
+  }));
+}
+// Archer Dodge — quick translucent after-images of a ring (agile blur).
+function dodgeBlur(durationMs) {
+  const g = new THREE.Group();
+  for (let i = 0; i < 3; i++) { const r = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.42, 20), bmat(0x9affc0, 0.5)); r.rotation.x = -Math.PI / 2; r.userData.i = i; g.add(r); }
+  addAura(durationMs, g, (now) => g.children.forEach((c, i) => { c.position.y = 0.1 + ((now / 500 + i / 3) % 1) * 1.6; c.material.opacity = 0.5 * (1 - ((now / 500 + i / 3) % 1)); }));
+}
+// Gunman Adrenaline — a throbbing red surge (heartbeat) with rising embers.
+function adrenalineAura(durationMs) {
+  const g = new THREE.Group();
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 12), bmat(0xff4d4d, 0.22)); core.position.y = 1; g.add(core);
+  for (let i = 0; i < 6; i++) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), bmat(0xff9a4d, 0.9)); e.userData.a = (i / 6) * 6.28; g.add(e); }
+  addAura(durationMs, g, (now) => {
+    const beat = 0.85 + Math.abs(Math.sin(now / 180)) * 0.5; core.scale.setScalar(beat);
+    g.children.forEach((c, i) => { if (i === 0) return; const a = c.userData.a + now / 250; c.position.set(Math.cos(a) * 0.55, 0.4 + ((now / 350 + c.userData.a) % 1) * 1.1, Math.sin(a) * 0.55); });
+  });
+}
+// Artisan Fortify — a hexagonal shield dome that shimmers around you.
+function hexShield(durationMs) {
+  const g = new THREE.Group();
+  const dome = new THREE.Mesh(new THREE.IcosahedronGeometry(1.0, 1), new THREE.MeshBasicMaterial({ color: 0x6fd0ff, transparent: true, opacity: 0.18, wireframe: true, depthWrite: false }));
+  dome.position.y = 1; g.add(dome);
+  const dome2 = new THREE.Mesh(new THREE.IcosahedronGeometry(1.05, 1), new THREE.MeshBasicMaterial({ color: 0xbfeaff, transparent: true, opacity: 0.1, depthWrite: false }));
+  dome2.position.y = 1; g.add(dome2);
+  addAura(durationMs, g, (now) => { dome.rotation.y = now / 1200; dome.rotation.x = now / 2400; const p = 1 + Math.sin(now / 200) * 0.04; dome.scale.setScalar(p); dome2.scale.setScalar(p); });
+}
+
+// Dispatch the LOCAL cast visual for a skill (caller has already validated it).
+function castSkillEffect(sk, lvl, target) {
+  const pos = player.pos.clone();
+  const rad = (sk.radius || 4) + lvl * 0.4;
+  const from = camera.position.clone().addScaledVector(aimDirection(), 0.8);
+  const dir = (target && target.point) ? target.point.clone().sub(from) : aimDirection();
+  switch (sk.id) {
+    case 'cleave': slashArc(pos, rad); break;
+    case 'warcry': shockRings(pos, 0xffcf5a); guardAura(sk.duration || 6000); break;
+    case 'charge': chargeTrail(sk.duration || 3000); spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.4, 0)), 0xbfe3ff); break;
+    case 'powershot': shootArrow(from, dir, { to: target && target.point ? target.point.clone() : null, maxDist: 36 * tuning.skillRangeMult, speed: 40, power: true }); break;
+    case 'volley': spawnFallingArrows(pos, rad); break;
+    case 'dodge': dodgeBlur(sk.duration || 2500); break;
+    case 'headshot': gunBeam(from, target && target.point ? target.point.clone() : from.clone().addScaledVector(dir, 30)); break;
+    case 'grenade': { const land = pos.clone().add(new THREE.Vector3(0, 0.2, 0)); lob(from, land, 0x3a3a3a, () => explosion(land, { core: 0xffb14d, big: true })); break; }
+    case 'adrenaline': adrenalineAura(sk.duration || 6000); break;
+    case 'fireball': shootProjectile(from, aimDirection(), 0xff7a2a, { to: target && target.point ? target.point.clone() : null, size: 0.45, maxDist: 30, speed: 15 }); break;
+    case 'frostnova': iceNova(pos, rad); break;
+    case 'heal': healColumn(pos); break;
+    case 'bomb': { const land = pos.clone().add(new THREE.Vector3(0, 0.2, 0)); lob(from, land, 0x222222, () => explosion(land, { core: 0xff7a2a, smoke: 0x333028, big: true })); break; }
+    case 'repair': repairSparks(pos); break;
+    case 'fortify': hexShield(sk.duration || 8000); break;
+    default:
+      if (sk.kind === 'aoe') spawnRing(pos, rad, skillColor(sk));
+      else if (sk.kind === 'heal') healColumn(pos);
+  }
+}
+
+// Positional version of an effect, for OTHER players' casts (skillFx broadcast).
+function remoteSkillEffect(skillId, kind, pos) {
+  switch (skillId) {
+    case 'cleave': slashArc(pos, 3.5); break;
+    case 'warcry': shockRings(pos, 0xffcf5a); break;
+    case 'charge': spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.5, 0)), 0xbfe3ff); break;
+    case 'volley': spawnFallingArrows(pos, 4.5); break;
+    case 'dodge': spawnRing(pos, 1.2, 0x9affc0); break;
+    case 'grenade': explosion(pos, { core: 0xffb14d, big: true }); break;
+    case 'adrenaline': spawnBurst(pos.clone().add(new THREE.Vector3(0, 1, 0)), 0xff5a3a); break;
+    case 'frostnova': iceNova(pos, 5); break;
+    case 'heal': healColumn(pos); break;
+    case 'bomb': explosion(pos, { core: 0xff7a2a, big: true }); break;
+    case 'repair': repairSparks(pos); break;
+    case 'fortify': spawnRing(pos, 1.6, 0x6fd0ff); break;
+    case 'powershot': case 'headshot': spawnBurst(pos.clone().add(new THREE.Vector3(0, 1.4, 0)), 0xfff2a0); break;
+    case 'fireball': spawnBurst(pos.clone().add(new THREE.Vector3(0, 1.4, 0)), 0xff7a2a); break;
+    default: if (kind === 'aoe') spawnRing(pos, 4, 0xffaa55); else spawnRing(pos.clone().add(new THREE.Vector3(0, 1, 0)), 1.2, 0xffffff);
   }
 }
 
@@ -1909,7 +2115,7 @@ function loop(now) {
   updateViewModel(dt);
   updateSkillBar(now);
   updateSprintUI();
-  updateSpeedAura(now);
+  updateAuras(now);
   updateFloats(dt);
   minimap.draw(player, remotePlayers, mobEntities);
 

@@ -34,6 +34,9 @@ const KILL_SCORE = 50;
 // above this many blocks and grounded monsters/players can't reach you. Ground
 // monsters also won't chase a target higher than this (they stay grounded).
 const VERT_LIMIT = 3.0;
+// How far above/below a monster a target can be before it gives up the chase
+// (flying players quickly get out of reach).
+const MAX_CHASE_DY = 4.0;
 
 // Collectible pickups. medkit heals, food restores stamina (hunger).
 const PICKUP_KINDS = {
@@ -948,11 +951,13 @@ export function attachGame(server) {
         moved.push({ id: m.id, x: m.x, y: m.y, z: m.z, yaw: m.yaw, st: mobStatusCodes(m, now) });
         continue;
       }
-      // Keep the current target only while it's within leash range, else give up.
+      // Keep the current target only while it's within leash range AND on
+      // roughly our level — a player who flies/climbs out of reach is dropped
+      // so monsters don't pointlessly chase someone in the air.
       let tgt = null;
       if (m.target != null) {
         const c = players.find((p) => p.netId === m.target);
-        if (c && Math.hypot(c.state.x - m.x, c.state.z - m.z) <= def.leash) tgt = c;
+        if (c && Math.hypot(c.state.x - m.x, c.state.z - m.z) <= def.leash && Math.abs(c.state.y - m.y) <= MAX_CHASE_DY) tgt = c;
         else m.target = null;
       }
       if (!tgt) {
@@ -960,6 +965,7 @@ export function attachGame(server) {
         for (const c of players) {
           // Strong monsters ignore low-level players unless provoked.
           if (def.minLevel && playerLevel(c) < def.minLevel) continue;
+          if (Math.abs(c.state.y - m.y) > MAX_CHASE_DY) continue; // can't reach a flyer — ignore
           const d = Math.hypot(c.state.x - m.x, c.state.z - m.z);
           if (d < bd) { bd = d; best = c; }
         }
