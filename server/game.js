@@ -402,8 +402,11 @@ export function attachGame(server) {
           const p = pickups.get(msg.id);
           if (!p) break;
           const s = ctx.state;
+          // Cylindrical reach: generous horizontal radius + tall vertical
+          // tolerance, so walking or flying past (feet above/below the pickup)
+          // still collects it.
           const dx = p.x - s.x, dy = p.y - s.y, dz = p.z - s.z;
-          if (dx * dx + dy * dy + dz * dz > PICKUP_GRAB * PICKUP_GRAB) break;
+          if (dx * dx + dz * dz > PICKUP_GRAB * PICKUP_GRAB || dy < -2.5 || dy > 3.5) break;
           const def = PICKUP_KINDS[p.kind] || PICKUP_KINDS.medkit;
           // Always bank pickups so the player decides when to use them — press Q
           // (medkit) / F (food) or the on-screen buttons to consume.
@@ -699,8 +702,9 @@ export function attachGame(server) {
     const g = ground.get(msg.id);
     if (!g) return;
     const s = ctx.state;
+    // Cylindrical reach (see pickups): walking/flying past should still grab it.
     const dx = g.x - s.x, dy = g.y - s.y, dz = g.z - s.z;
-    if (dx * dx + dy * dy + dz * dz > LOOT_GRAB * LOOT_GRAB) return;
+    if (dx * dx + dz * dz > LOOT_GRAB * LOOT_GRAB || dy < -2.5 || dy > 3.5) return;
     s.cash += g.cash;
     const inv = safeParse(s.inventory, {});
     for (const [type, count] of Object.entries(g.materials)) inv[type] = (inv[type] || 0) + count;
@@ -889,10 +893,13 @@ export function attachGame(server) {
     const kind = kinds[(Math.random() * kinds.length) | 0];
     const ang = Math.random() * Math.PI * 2;
     const r = 6 + Math.random() * 14;
-    const p = { id: nextPickupId++, kind,
-      x: round1(anchor.x + Math.cos(ang) * r),
-      y: round1(anchor.y + 0.5),
-      z: round1(anchor.z + Math.sin(ang) * r) };
+    const px = round1(anchor.x + Math.cos(ang) * r);
+    const pz = round1(anchor.z + Math.sin(ang) * r);
+    // Rest the pickup on the actual ground at (px,pz) — NOT at the anchor's
+    // height — so a player walking past at street level is at the same y and
+    // reliably collects it (floating pickups were impossible to reach on foot).
+    const py = mobFeetY(px, pz, GEN.WORLD_HEIGHT);
+    const p = { id: nextPickupId++, kind, x: px, y: py, z: pz };
     pickups.set(p.id, p);
     broadcast({ type: 'pickupSpawn', pickup: p });
     return p;
@@ -1142,9 +1149,14 @@ export function attachGame(server) {
       const s = ctx.state;
       const mh = getMaxHp(s);
       let changed = false;
-      if (s.hunger >= 16 && s.health < mh) { s.health = Math.min(mh, s.health + 1); changed = true; }
+      // Safe sanctuary / portal zone: fully restore health & hunger so players
+      // can recover by stepping inside.
+      if (inSafeZone(s.x, s.z)) {
+        if (s.health < mh) { s.health = mh; changed = true; }
+        if (s.hunger < 20) { s.hunger = 20; changed = true; }
+      } else if (s.hunger >= 16 && s.health < mh) { s.health = Math.min(mh, s.health + 1); changed = true; }
       else if (s.hunger === 0 && s.health > 1) { s.health = Math.max(1, s.health - 1); changed = true; }
-      if (changed) pushHealth(ctx);
+      if (changed) pushHealth(ctx, { hunger: s.hunger });
     }
   }, 3000);
 
