@@ -158,11 +158,17 @@ function setupNetwork() {
     // the token or reload (that would just bounce against the same block) —
     // freeze this tab and let the player decide to take over.
     if (msg && msg.reason === 'duplicate') { showDuplicateSession(); return; }
+    net.stop(); // bad/expired token — don't reconnect-loop; bounce to login
     localStorage.removeItem('vc_token');
     location.reload();
   });
 
   net.on('init', (msg) => {
+    // A second `init` means we reconnected after a dropped/backgrounded socket.
+    // The one-time setup below (World, Player, render loop) must not run twice —
+    // reload to pull a clean, fully synced session from the server.
+    if (world) { location.reload(); return; }
+    reconnectNotice = false;
     selfId = msg.selfId;
     username = msg.username;
     dayLength = msg.dayLength;
@@ -398,9 +404,16 @@ function setupNetwork() {
   net.on('sessionReplaced', () => endSession());
   net.on('disconnect', () => {
     if (sessionEnded) { endSession(); return; }
-    ui.addChat('', 'Disconnected from server. Reconnecting…', true);
+    // Show the reconnecting notice once per outage, not on every backoff retry.
+    if (!reconnectNotice) { reconnectNotice = true; ui.addChat('', 'Disconnected — reconnecting…', true); }
+  });
+  // A mobile tab that returns to the foreground may have had its socket closed
+  // while suspended — re-establish it the moment we're visible again.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') net.ensureConnected();
   });
 }
+let reconnectNotice = false;
 
 // The server kicked us because the account signed in elsewhere: hard-stop this
 // session so two devices can't appear to play at once.
@@ -408,6 +421,7 @@ let sessionEnded = false;
 function endSession() {
   if (sessionEnded && document.getElementById('session-ended') && !document.getElementById('session-ended').classList.contains('hidden')) return;
   sessionEnded = true;
+  net.stop(); // this session is over for good — don't auto-reconnect
   if (player) { player.input = { forward: 0, strafe: 0, jump: false, sprint: false }; }
   try { document.exitPointerLock?.(); } catch { /* ignore */ }
   const el = document.getElementById('session-ended');

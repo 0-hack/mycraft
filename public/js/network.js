@@ -32,11 +32,20 @@ export class Network {
   }
 
   connect(token) {
+    this._token = token;
+    this._wantOpen = true;   // keep trying to stay connected until stop()
+    this._retry = 0;
+    this._open();
+  }
+
+  _open() {
+    if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     this.ws = new WebSocket(`${proto}://${location.host}/ws`);
     this.ws.addEventListener('open', () => {
       this.connected = true;
-      this.send({ type: 'auth', token });
+      this._retry = 0;
+      this.send({ type: 'auth', token: this._token });
     });
     this.ws.addEventListener('message', (ev) => {
       let msg;
@@ -46,7 +55,33 @@ export class Network {
     this.ws.addEventListener('close', () => {
       this.connected = false;
       this.emit('disconnect', {});
+      if (this._wantOpen) this._scheduleReconnect();
     });
+  }
+
+  // Backoff reconnect (1s,2s,4s… capped at 16s) so a dropped/backgrounded socket
+  // re-establishes itself. The server hands back a fresh `init` on success.
+  _scheduleReconnect() {
+    if (this._reconnectTimer || !this._wantOpen) return;
+    const delay = Math.min(16000, 1000 * Math.pow(2, this._retry));
+    this._retry += 1;
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
+      if (this._wantOpen && (!this.ws || this.ws.readyState >= 2)) this._open();
+    }, delay);
+  }
+
+  // Reconnect immediately if the socket isn't open — used when a mobile tab
+  // returns to the foreground after the OS suspended/closed the connection.
+  ensureConnected() {
+    if (!this._wantOpen) return;
+    if (!this.ws || this.ws.readyState >= 2) { this._retry = 0; this._open(); }
+  }
+
+  // Stop trying to reconnect (logout / session taken over elsewhere).
+  stop() {
+    this._wantOpen = false;
+    if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
   }
 
   send(obj) {

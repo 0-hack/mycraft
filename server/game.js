@@ -335,14 +335,16 @@ export function attachGame(server) {
         }
         case 'attack': {
           if (ctx.dead) break;
-          if (isProtected(ctx)) break; // no attacking from a sanctuary / while shielded
           const now = Date.now();
           const prog = safeParse(ctx.state.progress, null);
           if (now - ctx.lastAttack < ATTACK_COOLDOWN * attackCooldownMult(prog)) break;
           ctx.lastAttack = now;
           const w = equippedWeapon(safeParse(ctx.state.equipment, null));
-          // Let everyone else play the swing / fire animation.
+          // Let everyone else play the swing / fire animation — even inside a
+          // sanctuary, so a player's swings are always visible to others.
           broadcast({ type: 'playerSwing', id: ctx.netId, cat: w.cat }, ws);
+          // …but a sanctuary / shield is purely cosmetic here: no damage dealt.
+          if (isProtected(ctx)) break;
           const s = ctx.state;
           const base = w.dmg * damageMult(prog, w.cat) * buffMult(ctx, 'dmg', 1);
           const rolled = critize(prog, base);
