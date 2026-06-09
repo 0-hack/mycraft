@@ -226,12 +226,14 @@ function render(data) {
       ? `<button class="small secondary" data-act="unwings" data-id="${u.id}">Remove wings</button>`
       : `<button class="small secondary" data-act="wings" data-id="${u.id}">🪽 Grant wings</button>`;
     const wingTag = u.can_fly ? ' <span class="tag" style="background:#2c5e8a">wings</span>' : '';
+    // No moderation actions on your own account.
+    const actions = u.id === data.me
+      ? `<span style="color:#6a7da0">— your account —</span>`
+      : `<button class="small" data-act="reset" data-id="${u.id}">Reset</button> ` +
+        mute + ` ` + wings + ` ` + ban + ` ` + promote + ` ` +
+        `<button class="small danger" data-act="delete" data-id="${u.id}">Delete</button>`;
     return `<tr><td>${esc(u.username)}${tags}${wingTag}</td><td>${fmtDate(u.last_active)}</td>` +
-      `<td>${u.score ?? 0}</td><td>💰${u.cash ?? 0}</td><td>` +
-      `<button class="small" data-act="reset" data-id="${u.id}">Reset</button> ` +
-      `<button class="small secondary" data-act="kick" data-id="${u.id}">Kick</button> ` +
-      mute + ` ` + wings + ` ` + ban + ` ` + promote + ` ` +
-      `<button class="small danger" data-act="delete" data-id="${u.id}">Delete</button></td></tr>`;
+      `<td>${u.score ?? 0}</td><td>💰${u.cash ?? 0}</td><td>${actions}</td></tr>`;
   }).join('') || '<tr><td colspan="5">No accounts.</td></tr>';
 
   for (const btn of $('users-body').querySelectorAll('button[data-act]')) {

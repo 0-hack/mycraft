@@ -1301,10 +1301,6 @@ export function attachGame(server) {
       stateQueries.delete.run(userId);
       userQueries.delete.run(userId);
     },
-    kick(userId) {
-      const c = findByUserId(userId);
-      if (c) { c.skipSave = true; c.ws.close(); clients.delete(c.ws); }
-    },
     recentChat() { return chatLog.slice(-120); },
     broadcastTuning() { broadcast({ type: 'tuning', tuning: clientTuning() }); },
     broadcastMusic(url) { broadcast({ type: 'music', url: url || '' }); },

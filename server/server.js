@@ -107,6 +107,7 @@ function requireAdmin(req, res, next) {
 
 app.get('/api/admin/overview', requireAdmin, (_req, res) => {
   res.json({
+    me: _req.admin.id,
     settings: getSettings(),
     prices: CONFIG.MATERIAL_PRICES,
     users: userQueries.all.all(),
@@ -182,26 +183,19 @@ app.post('/api/admin/user', adminLimiter, requireAdmin, (req, res) => {
   const userId = Number(id);
   const target = userQueries.byId.get(userId);
   if (!target) return res.status(404).json({ error: 'No such user.' });
+  // An admin can't run moderation actions on their own account.
+  if (userId === req.admin.id) return res.status(400).json({ error: 'You cannot perform actions on your own account.' });
   switch (action) {
-    case 'delete':
-      if (userId === req.admin.id) return res.status(400).json({ error: 'You cannot delete yourself here.' });
-      game.deleteUser(userId);
-      break;
+    case 'delete': game.deleteUser(userId); break;
     case 'reset': game.resetUser(userId); break;
-    case 'kick': game.kick(userId); break;
-    case 'ban':
-      if (userId === req.admin.id) return res.status(400).json({ error: 'You cannot ban yourself.' });
-      game.setBanned(userId, true); break;
+    case 'ban': game.setBanned(userId, true); break;
     case 'unban': game.setBanned(userId, false); break;
     case 'mute': game.setMuted(userId, true); break;
     case 'unmute': game.setMuted(userId, false); break;
     case 'wings': game.setWings(userId, true); break;
     case 'unwings': game.setWings(userId, false); break;
     case 'promote': userQueries.setAdmin.run(1, userId); break;
-    case 'demote':
-      if (userId === req.admin.id) return res.status(400).json({ error: 'You cannot demote yourself.' });
-      userQueries.setAdmin.run(0, userId);
-      break;
+    case 'demote': userQueries.setAdmin.run(0, userId); break;
     default: return res.status(400).json({ error: 'Unknown action.' });
   }
   res.json({ ok: true });

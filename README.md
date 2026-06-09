@@ -87,7 +87,7 @@ no installs, no plugins. Just open a URL.
   defensive base** to protect your stash.
 - 🛠 **Admin panel** — an authenticated `/admin.html` page to tune **difficulty**,
   spawn rates and the objects deployed, deploy pickups on demand, and manage
-  accounts (reset, kick, promote, delete). Idle accounts are auto-purged to keep
+  accounts (reset, ban, mute, promote, delete). Idle accounts are auto-purged to keep
   the server lean, and players can delete their own account from the backpack.
 - 🎮 **Gamified** — health & hunger survival, fall damage, swimming, XP & levels,
   a score for mining/building/fighting, unlockable **achievements**, a global
