@@ -236,9 +236,10 @@ export class Player {
   }
 
   // DDA voxel raycast from the camera. Returns { hit, place } block coords.
-  // `maxDist` lets callers cap reach to the equipped weapon (melee can only
-  // break/place blocks up close; ranged reaches much further).
-  raycast(maxDist = REACH) {
+  // `maxDist` caps the 3D ray; `maxHoriz` caps how far sideways the hit block may
+  // be (melee can only break/place blocks they stand right next to, but can still
+  // dig straight down; ranged reaches much further).
+  raycast(maxDist = REACH, maxHoriz = Infinity) {
     const origin = this.camera.position.clone();
     const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).normalize();
 
@@ -258,6 +259,9 @@ export class Player {
     while (dist < maxDist) {
       const block = this.world.getBlock(x, y, z);
       if (isSolid(block)) {
+        // Closest solid is beyond horizontal reach → nothing targetable (keeps
+        // mining/building to the bricks right next to you).
+        if (Math.hypot(x + 0.5 - origin.x, z + 0.5 - origin.z) > maxHoriz) return null;
         return { hit: { x, y, z }, place: prev };
       }
       prev = { x, y, z };

@@ -28,17 +28,16 @@ export const ARMOR_SLOTS = ['helmet', 'chest', 'legs', 'boots'];
 export const MAX_LEVEL = 5;
 
 export function defaultEquipment() {
-  return { weapon: 'sword', weapons: { sword: 1 }, helmet: 0, chest: 0, legs: 0, boots: 0 };
+  return { weapon: 'axe', weapons: { axe: 1, sword: 1 }, helmet: 0, chest: 0, legs: 0, boots: 0 };
 }
 
-// Starting loadout for a chosen class: everyone owns a basic sword + an axe
-// (the quick-swap weapon on hotbar slot 1), plus their class's favored weapon,
-// which is the one equipped by default (mage→staff, archer→bow, etc.).
+// Starting loadout for a chosen class: everyone starts holding the all-round
+// Axe — the default mining tool, Minecraft-style — with a basic sword and their
+// class's favored weapon (mage→staff, archer→bow, …) in the hotbar to swap to.
 export function classEquipment(favored) {
   const weapons = { sword: 1, axe: 1 };
   if (favored && WEAPONS[favored] && WEAPONS[favored].craftable) weapons[favored] = 1;
-  const weapon = favored && weapons[favored] ? favored : 'sword';
-  return { weapon, weapons, helmet: 0, chest: 0, legs: 0, boots: 0 };
+  return { weapon: 'axe', weapons, helmet: 0, chest: 0, legs: 0, boots: 0 };
 }
 
 export function normalizeEquipment(e) {
@@ -93,12 +92,21 @@ export function mitigate(dmg, defense) {
   return Math.max(1, Math.round(dmg * (1 - Math.min(0.8, defense * 0.04))));
 }
 
-// How far blocks can be mined/placed with a weapon in hand. Melee weapons use
-// their (short) reach so you must stand right next to a brick — an axe/sword
-// only ~1 block away, a spear a little further. Ranged weapons reach further but
-// are capped so you can't break bricks across the map.
-export const BLOCK_REACH_CAP = 6;
-export function blockReach(w) { return Math.min((w && w.reach) || BLOCK_REACH_CAP, BLOCK_REACH_CAP); }
+// How far blocks can be mined/placed with the weapon in hand. The camera sits
+// ~1.6 blocks above the feet, so digging straight down/up needs a couple blocks
+// of straight-line reach — hence we keep the 3D ray cap generous but enforce a
+// tight *horizontal* limit. The horizontal limit is what makes it "you must
+// stand right next to the brick": axe/sword ~1 cell, spear ~2 cells, while
+// ranged weapons reach much further.
+export function blockReach(w) {  // 3D ray cap — lets you dig straight down/up
+  return (w && (w.cat === 'ranged' || w.cat === 'magic')) ? 6 : 4.0;
+}
+export function blockReachH(w) { // horizontal cap — "how many bricks away"
+  if (!w) return 1.6;
+  if (w.cat === 'ranged' || w.cat === 'magic') return 6;
+  if (w.id === 'spear') return 2.6;        // a reach weapon — about 2 bricks
+  return 1.6;                              // axe/sword/pickaxe/fist — strictly adjacent
+}
 
 // Cost to craft (0→1) or upgrade (L→L+1): cash + total raw-material units.
 export function upgradeCost(currentLevel) {

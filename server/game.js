@@ -11,7 +11,7 @@ import { getAllEdits, setBlock, isSolidAt, getBlockType } from './world.js';
 import { GEN, blockHardness, inSafeZone } from '../public/js/worldgen.js';
 import {
   weaponStats, equippedWeapon, defenseOf, mitigate, upgradeCost,
-  normalizeEquipment, defaultEquipment, classEquipment, WEAPONS, ARMOR, MAX_LEVEL, blockReach,
+  normalizeEquipment, defaultEquipment, classEquipment, WEAPONS, ARMOR, MAX_LEVEL, blockReach, blockReachH,
 } from '../public/js/gear.js';
 import {
   defaultProgress, normalizeProgress, addXp, maxHealth, damageMult,
@@ -529,9 +529,11 @@ export function attachGame(server) {
     if (ctx.dead) return;
 
     const s = ctx.state;
-    // Breaking/placing is gated by the equipped weapon's reach, same as mining.
-    const reach = blockReach(equippedWeapon(safeParse(s.equipment, null))) + 1.5;
-    if (Math.hypot(x + 0.5 - s.x, y + 0.5 - (s.y + 1.4), z + 0.5 - s.z) > reach) return;
+    // Breaking/placing is gated by the equipped weapon's reach, same as mining:
+    // a tight horizontal limit plus a generous 3D cap (so you can dig down).
+    const wEq = equippedWeapon(safeParse(s.equipment, null));
+    if (Math.hypot(x + 0.5 - s.x, z + 0.5 - s.z) > blockReachH(wEq) + 1.0) return;
+    if (Math.hypot(x + 0.5 - s.x, y + 0.5 - (s.y + 1.4), z + 0.5 - s.z) > blockReach(wEq) + 1.5) return;
     if (action === 'break') {
       setBlock(x, y, z, 0);
       s.blocks_mined += 1;
@@ -575,8 +577,10 @@ export function attachGame(server) {
     if (![x, y, z].every(Number.isFinite) || y < 1 || y > 63) return;
     const s = ctx.state;
     const w = equippedWeapon(safeParse(s.equipment, null));
-    // Must be within the equipped weapon's reach (small slack for latency / eye
-    // height). Melee weapons only chip nearby blocks; ranged reach much further.
+    // Must be within the weapon's reach (small slack for latency / eye height).
+    // Horizontal is the tight gate (melee = right next to the brick); the 3D cap
+    // is generous so digging straight down still works.
+    if (Math.hypot(x + 0.5 - s.x, z + 0.5 - s.z) > blockReachH(w) + 1.0) return;
     if (Math.hypot(x + 0.5 - s.x, y + 0.5 - (s.y + 1.4), z + 0.5 - s.z) > blockReach(w) + 1.5) return;
     const type = getBlockType(x, y, z);
     if (!isSolidAt(x, y, z) || type === 1 /* bedrock */) return;
