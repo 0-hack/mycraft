@@ -423,7 +423,7 @@ export function attachGame(server) {
           s.consumables = JSON.stringify(cons);
           pickups.delete(p.id);
           broadcast({ type: 'pickupRemove', id: p.id });
-          send(ws, { type: 'pickupGot', kind: p.kind, heal: def.heal, hunger: def.hunger, stored: true });
+          send(ws, { type: 'pickupGot', kind: p.kind, heal: def.heal, hunger: def.hunger, stored: true, x: p.x, y: p.y, z: p.z });
           send(ws, { type: 'stats', state: publicState(s) });
           break;
         }
@@ -726,7 +726,7 @@ export function attachGame(server) {
     for (const [type, count] of Object.entries(g.materials)) inv[type] = (inv[type] || 0) + count;
     s.inventory = JSON.stringify(inv);
     removeGround(g.id);
-    send(ws, { type: 'looted', cash: g.cash, count: materialCount(g.materials), owner: g.owner_name });
+    send(ws, { type: 'looted', cash: g.cash, count: materialCount(g.materials), owner: g.owner_name, x: g.x, y: g.y, z: g.z });
     send(ws, { type: 'stats', state: publicState(s) });
   }
 

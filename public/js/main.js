@@ -330,10 +330,9 @@ function setupNetwork() {
   net.on('pickupSpawn', (msg) => addPickup(msg.pickup));
   net.on('pickupRemove', (msg) => removePickup(msg.id));
   net.on('pickupGot', (msg) => {
-    const label = msg.kind === 'medkit' ? '🩹 Healing patch' : '🍗 Food';
-    const key = msg.kind === 'medkit' ? 'Q' : 'F';
-    ui.toast(`${label} added to bag — press ${key} (or the button) to use.`);
     audio.play('pickup');
+    const icon = msg.kind === 'medkit' ? '🩹' : '🍗';
+    lootPop(msg, '+' + icon, msg.kind === 'medkit' ? '#7fe3a0' : '#f4d35e', 0x7fe3a0);
   });
   net.on('groundItemSpawn', (msg) => addGround(msg.item));
   net.on('groundItemRemove', (msg) => removeGround(msg.id));
@@ -344,7 +343,6 @@ function setupNetwork() {
     const e = mobEntities.get(msg.id);
     if (!e) return;
     e.health = msg.health; updateMobBar(e); mobFlash(e);
-    if (msg.id === bossId) updateBoss(msg.health);
     if (msg.dmg) { const crit = msg.fx === 'crit'; worldFloat(e.group.position.x, e.group.position.y + mobTop(e), e.group.position.z, '-' + msg.dmg + (crit ? '!' : ''), FX_COLOR[msg.fx] || '#fff', crit); }
   });
   net.on('mobDead', (msg) => {
@@ -367,11 +365,9 @@ function setupNetwork() {
     else ui.toast('Nothing to sell.');
   });
   net.on('looted', (msg) => {
-    const bits = [];
-    if (msg.cash) bits.push(`💰 ${msg.cash}`);
-    if (msg.count) bits.push(`🎒 ${msg.count} materials`);
-    ui.toast(`Looted ${msg.owner ? msg.owner + "'s" : 'a'} stash!\n${bits.join('  ')}`);
     audio.play('coin');
+    const text = msg.cash ? `+💰${msg.cash}` : (msg.count ? `+🎒${msg.count}` : '');
+    if (text) lootPop(msg, text, '#ffd23f', 0xffd23f);
   });
   net.on('playerAppearance', (msg) => {
     const r = remotePlayers.get(msg.id);
@@ -1890,6 +1886,14 @@ function worldFloat(x, y, z, text, color, big) {
   const life = big ? 1.1 : 0.9;
   floats3d.push({ sp, life, max: life });
 }
+// Small in-world pop where a pickup / loot stash was collected — a rising icon
+// plus a sparkle. Replaces the old center-screen toast so rapid looting never
+// blocks the player's view.
+function lootPop(msg, text, textColor, sparkColor) {
+  if (!scene || !Number.isFinite(msg.x)) return;
+  worldFloat(msg.x, msg.y + 0.6, msg.z, text, textColor, false);
+  spawnBurst(new THREE.Vector3(msg.x, msg.y + 0.4, msg.z), sparkColor);
+}
 function updateFloats(dt) {
   for (let i = floats3d.length - 1; i >= 0; i--) {
     const f = floats3d[i];
@@ -1913,7 +1917,7 @@ function selfFloat(text, color) {
 }
 
 // ---------------------------------------------------------------- boss UI
-let bossId = null, bossMax = 1;
+let bossId = null;
 let _bossBannerTimer = null;
 function bossBanner(text) {
   const el = document.getElementById('boss-banner');
@@ -1924,24 +1928,17 @@ function bossBanner(text) {
   clearTimeout(_bossBannerTimer);
   _bossBannerTimer = setTimeout(() => el.classList.add('hidden'), 3500);
 }
+// The boss's health rides above its head (drawn like any mob's bar, just larger
+// with a name) — no center-screen bar to block the view. We only track its id so
+// we can play the win sting and the defeated banner.
 function showBoss(mob) {
   audio.play('boss');
-  bossId = mob.id; bossMax = mob.maxHealth || 1;
-  document.getElementById('boss-name').textContent = (MOB_TYPES[mob.type] || {}).name || 'Boss';
-  document.getElementById('boss-fill').style.width = (mob.health / bossMax * 100) + '%';
-  document.getElementById('boss-bar').classList.remove('hidden');
-  document.body.classList.add('boss-active'); // shifts toasts clear of the bar
+  bossId = mob.id;
   bossBanner('⚔️ ' + ((MOB_TYPES[mob.type] || {}).name || 'Boss') + ' has appeared!');
-}
-function updateBoss(health) {
-  if (bossId == null) return;
-  document.getElementById('boss-fill').style.width = Math.max(0, health / bossMax * 100) + '%';
 }
 function hideBoss(victory) {
   if (bossId == null) return;
   bossId = null;
-  document.getElementById('boss-bar').classList.add('hidden');
-  document.body.classList.remove('boss-active');
   if (victory) bossBanner('🏆 Boss defeated!');
 }
 
@@ -2092,13 +2089,26 @@ function buildMobMesh(type) {
     box(0.6, 1.0, 0.34, 0, 0.6, 0, C);
     box(0.5, 0.5, 0.5, 0, 1.35, 0, C);
   }
-  // Health bar sprite above the mob.
+  // Health bar sprite above the mob. The boss gets a chunkier bar plus a name
+  // plate so its status reads clearly while hovering above its head.
   const canvas = document.createElement('canvas');
   canvas.width = 64; canvas.height = 10;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false }));
-  sprite.scale.set(1.2, 0.2, 1);
-  sprite.position.y = H + 0.35;
+  sprite.scale.set(def.boss ? 2.8 : 1.2, def.boss ? 0.34 : 0.2, 1);
+  sprite.position.y = H + (def.boss ? 0.5 : 0.35);
   g.add(sprite);
+  if (def.boss) {
+    const nc = document.createElement('canvas');
+    nc.width = 256; nc.height = 48;
+    const ng = nc.getContext('2d');
+    ng.font = 'bold 30px sans-serif'; ng.textAlign = 'center'; ng.textBaseline = 'middle';
+    ng.lineWidth = 6; ng.strokeStyle = 'rgba(0,0,0,0.85)'; ng.strokeText(def.name, 128, 24);
+    ng.fillStyle = '#ffd0d0'; ng.fillText(def.name, 128, 24);
+    const ns = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(nc), depthTest: false, transparent: true }));
+    ns.scale.set(3.2, 0.6, 1);
+    ns.position.y = H + 0.95;
+    g.add(ns);
+  }
   // Status-effect icons above the health bar.
   const sc = document.createElement('canvas');
   sc.width = 96; sc.height = 28;

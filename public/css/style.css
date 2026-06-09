@@ -69,29 +69,13 @@ body.touch #minimap { width: 66px; height: 66px; }
   pointer-events: none; }
 #mine-bar > div { height: 100%; width: 0%; background: linear-gradient(90deg, #f4d35e, #ff8c42); }
 
-/* Boss alert banner + health bar. */
+/* Boss alert banner (the health bar hovers above the boss's head in 3D). */
 #boss-banner { position: fixed; top: 38%; left: 50%; transform: translateX(-50%);
   z-index: 22; pointer-events: none; text-align: center; font-weight: 800; font-size: 30px;
   color: #ffd0d0; text-shadow: 0 2px 10px #000, 0 0 20px #b23a3a;
   animation: bossIn 0.5s ease-out; white-space: nowrap; }
 @keyframes bossIn { from { opacity: 0; transform: translate(-50%, 12px) scale(0.9); } to { opacity: 1; } }
-#boss-bar { position: fixed; top: 76px; left: 50%; transform: translateX(-50%);
-  width: min(480px, 80vw); z-index: 12; text-align: center; pointer-events: none; }
-#boss-name { font-size: 13px; font-weight: 700; color: #ffd0d0; text-shadow: 0 1px 3px #000; letter-spacing: 1px; }
-.bossbar-track { height: 14px; margin-top: 3px; background: rgba(0,0,0,0.55); border-radius: 7px;
-  overflow: hidden; border: 1px solid rgba(255,255,255,0.25); }
-#boss-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #8a2db0, #d54a4a);
-  transition: width 0.2s; }
-/* While a boss is on screen, drop notifications below its health bar so they're
-   never hidden behind it. */
-body.boss-active #toasts { top: 120px; }
-/* On phones keep the bar compact and clear of the top bar / minimap row, and
-   push notifications further down to match. */
-body.touch #boss-bar { top: 96px; width: min(340px, 66vw); }
-body.touch #boss-name { font-size: 12px; }
-body.touch .bossbar-track { height: 12px; }
 body.touch #boss-banner { font-size: 22px; }
-body.touch.boss-active #toasts { top: 138px; }
 
 /* Floating combat numbers for the player (mob numbers float in 3D). */
 #floats { position: fixed; inset: 0; z-index: 7; pointer-events: none; }
