@@ -82,6 +82,7 @@ ensureColumn('users', 'last_active', 'INTEGER');
 ensureColumn('users', 'banned', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('users', 'muted', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('users', 'can_fly', 'INTEGER NOT NULL DEFAULT 0'); // admin-granted wings
+ensureColumn('users', 'guide_seen', 'INTEGER NOT NULL DEFAULT 0'); // new-player guide shown once
 ensureColumn('player_state', 'cash', 'INTEGER DEFAULT 0');
 ensureColumn('player_state', 'appearance', 'TEXT');
 ensureColumn('player_state', 'equipment', 'TEXT');
@@ -107,6 +108,7 @@ export const userQueries = {
     ORDER BY u.last_active DESC NULLS LAST, u.created_at DESC
   `),
   touch: db.prepare('UPDATE users SET last_active = ? WHERE id = ?'),
+  setGuideSeen: db.prepare('UPDATE users SET guide_seen = 1 WHERE id = ?'),
   setAdmin: db.prepare('UPDATE users SET is_admin = ? WHERE id = ?'),
   setBanned: db.prepare('UPDATE users SET banned = ? WHERE id = ?'),
   setMuted: db.prepare('UPDATE users SET muted = ? WHERE id = ?'),

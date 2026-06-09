@@ -10,7 +10,7 @@ import { isTouchDevice, setupMobileControls } from './mobile.js';
 import { Minimap } from './minimap.js';
 import { buildCharacter, animateCharacter, addWings, setPainFace } from './character.js';
 import { CharacterEditor } from './chareditor.js';
-import { Tutorial, tutorialSeen } from './tutorial.js';
+import { Tutorial } from './tutorial.js';
 import { addAccent } from './detail.js';
 import { equippedWeapon, speedMultiplier, bodyArmorWeight, defaultEquipment, WEAPONS } from './gear.js';
 import { speedAttrMult, hungerMult, maxHealth, defaultProgress, classSkills, CLASSES, rangeMult } from './rpg.js';
@@ -153,7 +153,11 @@ function makeCrackTextures(stages) {
 }
 
 function setupNetwork() {
-  net.on('authError', () => {
+  net.on('authError', (msg) => {
+    // A live session for this account is already playing elsewhere. Don't clear
+    // the token or reload (that would just bounce against the same block) —
+    // freeze this tab and let the player decide to take over.
+    if (msg && msg.reason === 'duplicate') { showDuplicateSession(); return; }
     localStorage.removeItem('vc_token');
     location.reload();
   });
@@ -209,12 +213,14 @@ function setupNetwork() {
 
     // First-time players go to the character creator before they get going.
     // They're shielded (immune + invisible) while setting up / reading the guide.
+    // `firstTime` is server-authoritative: the guide auto-shows once per account.
     myAppearance = msg.state?.appearance || null;
+    guideFirstTime = !!msg.firstTime;
     if (!myAppearance) {
       setGuideShield(true);
       charEditor.open(null, myProgress.class, saveAppearance);
       ui.addChat('', 'Create your character & pick a class to get started — reopen via 🎒 Bag → Customise.', true);
-    } else if (!tutorialSeen()) {
+    } else if (guideFirstTime) {
       setGuideShield(true);
       tutorial.open();
     }
@@ -406,6 +412,25 @@ function endSession() {
   try { document.exitPointerLock?.(); } catch { /* ignore */ }
   const el = document.getElementById('session-ended');
   if (el) el.classList.remove('hidden');
+}
+
+// This (new) connection was rejected because the account is already playing on
+// another device. We keep the token and offer a retry rather than reload-looping
+// against the live session.
+function showDuplicateSession() {
+  sessionEnded = true;
+  if (player) { player.input = { forward: 0, strafe: 0, jump: false, sprint: false }; }
+  try { document.exitPointerLock?.(); } catch { /* ignore */ }
+  const el = document.getElementById('session-ended');
+  if (!el) return;
+  const h = el.querySelector('h2');
+  const p = el.querySelector('p');
+  const btn = el.querySelector('#btn-session-reload');
+  if (h) h.textContent = '🔒 Already playing elsewhere';
+  if (p) p.textContent = 'This account is already active on another device. Only one '
+    + 'session can run at a time. Close the other one, then retry here.';
+  if (btn) btn.textContent = 'Retry';
+  el.classList.remove('hidden');
 }
 
 let currentStats = defaultStats();
@@ -1037,9 +1062,20 @@ function refreshFlyIndicator() {
 
 // ---- new-player guide shield (immune + invisible while reading) ----
 let guideShielded = false;
+let guideFirstTime = false; // server says this account hasn't seen the guide yet
 function setGuideShield(on) {
   guideShielded = !!on;
   if (net) net.sendGuide(guideShielded);
+}
+// Safety net: never stay shielded once the guide UI (char editor / tutorial) is
+// gone — otherwise a player could be stuck immune and unable to act.
+function dropShieldIfGuideClosed() {
+  if (!guideShielded) return;
+  const tut = document.getElementById('tutorial');
+  const ch = document.getElementById('character');
+  const tutOpen = tut && !tut.classList.contains('hidden');
+  const chOpen = ch && !ch.classList.contains('hidden');
+  if (!tutOpen && !chOpen) setGuideShield(false);
 }
 
 // HUD banner shown while protected (reading the guide) or inside a sanctuary.
@@ -1065,7 +1101,10 @@ function saveAppearance(appearance, cls) {
   if (cls) net.sendSetClass(cls); // server applies only on a fresh character
   buildViewModel();
   ui.toast('🧑‍🎨 Character saved!');
-  if (firstTime && !tutorialSeen()) tutorial.open(); // new players get the tour
+  // New players get the tour (server-authoritative, once per account). Otherwise
+  // make sure we never leave the shield up — drop it now that the editor closed.
+  if (firstTime && guideFirstTime) tutorial.open();
+  else setGuideShield(false);
 }
 
 // ---------------------------------------------------------------- remote players
@@ -1717,7 +1756,7 @@ function placeBlock() {
 
 // ---------------------------------------------------------------- pickups
 const pickups = new Map();          // id -> { kind, mesh, baseY, phase, x, y, z }
-const requestedPickups = new Set(); // ids we've already asked to collect
+const requestedPickups = new Map(); // id -> next time (ms) we may re-ask to collect
 
 function makePickupSprite(kind) {
   const canvas = document.createElement('canvas');
@@ -1760,19 +1799,22 @@ function removePickup(id) {
 }
 
 function updatePickups(t) {
+  const now = performance.now();
   for (const [id, e] of pickups) {
     e.mesh.position.y = e.baseY + Math.sin(t * 3 + e.phase) * 0.18;
-    if (player && !player.dead && !requestedPickups.has(id)) {
-      // Cylindrical proximity: a generous horizontal radius plus a tall vertical
-      // tolerance so jumping over (or standing under) a floating pickup still
-      // grabs it. The server allows up to 2.5 units, so stay within that.
-      const dx = e.x - player.pos.x;
-      const dz = e.z - player.pos.z;
-      const dy = e.y - player.pos.y; // pickup ground level vs. feet
-      if (dx * dx + dz * dz < 1.7 * 1.7 && dy > -1.5 && dy < 2.4) {
-        requestedPickups.add(id);
-        net.sendPickup(id);
-      }
+    if (!player || player.dead) continue;
+    // Cylindrical proximity: a generous horizontal radius plus a tall vertical
+    // tolerance so jumping over (or standing under) a floating pickup still
+    // grabs it. The server allows up to 2.5 units (3D sphere) from its own
+    // authoritative position, which can lag a fast/flying client — so we keep
+    // re-asking on a short cooldown instead of giving up after one rejected try.
+    const dx = e.x - player.pos.x;
+    const dz = e.z - player.pos.z;
+    const dy = e.y - player.pos.y; // pickup ground level vs. feet
+    const near = dx * dx + dz * dz < 2.0 * 2.0 && dy > -1.6 && dy < 2.6;
+    if (near && now >= (requestedPickups.get(id) || 0)) {
+      requestedPickups.set(id, now + 150); // retry until the server confirms removal
+      net.sendPickup(id);
     }
   }
 }
@@ -2125,7 +2167,7 @@ function updateMobs(dt, t) {
 
 // ---------------------------------------------------------------- ground loot
 const groundItems = new Map();       // id -> { mesh, baseY, phase, x, y, z }
-const requestedLoot = new Set();
+const requestedLoot = new Map();     // id -> next time (ms) we may re-ask to collect
 
 function makeGroundSprite() {
   const canvas = document.createElement('canvas');
@@ -2168,16 +2210,18 @@ function removeGround(id) {
 }
 
 function updateGround(t) {
+  const now = performance.now();
   for (const [id, e] of groundItems) {
     e.mesh.position.y = e.baseY + Math.sin(t * 2.2 + e.phase) * 0.16;
-    if (player && !player.dead && !requestedLoot.has(id)) {
-      const dx = e.x - player.pos.x;
-      const dy = e.y - (player.pos.y + 0.9);
-      const dz = e.z - player.pos.z;
-      if (dx * dx + dy * dy + dz * dz < 1.9 * 1.9) {
-        requestedLoot.add(id);
-        net.sendCollectGround(id);
-      }
+    if (!player || player.dead) continue;
+    const dx = e.x - player.pos.x;
+    const dy = e.y - (player.pos.y + 0.9);
+    const dz = e.z - player.pos.z;
+    // Re-ask on a short cooldown until the server confirms removal, so a single
+    // rejected request (stale server-side position) doesn't abandon the loot.
+    if (dx * dx + dy * dy + dz * dz < 2.1 * 2.1 && now >= (requestedLoot.get(id) || 0)) {
+      requestedLoot.set(id, now + 150);
+      net.sendCollectGround(id);
     }
   }
 }
@@ -2211,6 +2255,7 @@ function loop(now) {
   updateAuras(now);
   updateSafeZones(now);
   updateSafeHud();
+  dropShieldIfGuideClosed();
   updateFloats(dt);
   minimap.draw(player, remotePlayers, mobEntities);
 

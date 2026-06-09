@@ -212,6 +212,7 @@ export function attachGame(server) {
     ws.on('message', (raw) => {
       let msg;
       try { msg = JSON.parse(raw); } catch { return; }
+      if (ctx) ctx.lastSeen = Date.now(); // liveness for single-session checks
 
       if (!ctx) {
         if (msg.type !== 'auth') return ws.close();
@@ -220,17 +221,20 @@ export function attachGame(server) {
         // Reject if the account was deleted or banned since the token was issued.
         const urow = userQueries.byId.get(payload.id);
         if (!urow || urow.banned) return send(ws, { type: 'authError' }), ws.close();
-        // One session per account: if this user is already connected elsewhere,
-        // kick the older session so there's never a duplicate player in-world.
+        // One session per account: reject this connection if the account is
+        // already actively playing elsewhere. A session is "active" if it sent
+        // anything in the last 25s; a stale (crashed/dropped) one is taken over.
         const existing = findByUserId(payload.id);
         if (existing) {
-          existing.skipSave = true; // the incoming session owns the latest state
-          const oldWs = existing.ws;
-          send(oldWs, { type: 'sessionReplaced' });
-          clients.delete(oldWs);
+          const live = existing.ws.readyState === 1 && (Date.now() - (existing.lastSeen || 0) < 25000);
+          if (live) { send(ws, { type: 'authError', reason: 'duplicate' }); return ws.close(4002, 'duplicate-session'); }
+          // Stale session — take it over.
+          existing.skipSave = true;
+          send(existing.ws, { type: 'sessionReplaced' });
+          clients.delete(existing.ws);
           broadcast({ type: 'playerLeave', id: existing.netId });
-          try { oldWs.close(4001, 'session-replaced'); } catch { /* ignore */ }
-          // Force the old socket dead if it doesn't close promptly.
+          try { existing.ws.close(4001, 'session-replaced'); } catch { /* ignore */ }
+          const oldWs = existing.ws;
           setTimeout(() => { try { if (oldWs.readyState !== oldWs.CLOSED) oldWs.terminate(); } catch { /* ignore */ } }, 1500);
         }
         const state = loadState(payload.id);
@@ -241,7 +245,7 @@ export function attachGame(server) {
         userQueries.touch.run(Date.now(), payload.id);
         ctx = {
           user: payload, state, ws, netId: nextNetId++,
-          lastMove: 0, lastAttack: 0, dead: false, skipSave: false,
+          lastMove: 0, lastAttack: 0, dead: false, skipSave: false, lastSeen: Date.now(),
           muted: !!urow.muted, skillCd: {}, buffs: {}, effects: {}, lastChat: 0,
           invulnUntil: Date.now() + getSettings().spawnProtectSec * 1000, // spawn protection
         };
@@ -255,6 +259,7 @@ export function attachGame(server) {
           serverTime: Date.now(),
           selfId: ctx.netId,
           username: payload.username,
+          firstTime: !urow.guide_seen, // show the new-player guide once per account
           isAdmin: !!userQueries.byId.get(payload.id)?.is_admin,
           state: publicState(state),
           prices: CONFIG.MATERIAL_PRICES,
@@ -460,6 +465,7 @@ export function attachGame(server) {
           const on = !!msg.open;
           ctx.shielded = on;
           ctx.shieldUntil = on ? Date.now() + 5 * 60 * 1000 : 0;
+          if (!on) userQueries.setGuideSeen.run(ctx.user.id); // the guide has been shown — never auto-show again
           broadcast({ type: 'playerShield', id: ctx.netId, on }, ws);
           break;
         }
