@@ -45,13 +45,21 @@ export class Tutorial {
       { icon: '⭐', title: 'Level up',
         body: 'Earn <b>XP</b> by mining, building and fighting. Every level grants <b>attribute points</b> (Strength, Dexterity, etc.) ' +
               'and a <b>skill point</b> — spend them in the Bag to grow your chosen class.' },
+      { icon: '🩹', title: 'Heal & refuel',
+        body: '<b>🩹 Healing patches</b> and <b>🍗 food</b> are scattered all over the streets — just <b>walk over one</b> to bank it. ' +
+              k('Then tap the <b>🩹</b> / <b>🍗</b> buttons (next to the attack button) to use them.',
+                'Then press <b>Q</b> to use a healing patch and <b>F</b> to eat food.') },
+      { icon: '🕊️', title: 'Safe sanctuaries',
+        body: 'Glowing <b>🕊 safe sanctuaries</b> (like the Spawn Plaza) are no-danger zones: <b>no monsters or PvP</b>, ' +
+              'and standing inside <b>fully restores your health & hunger</b>. They\'re also the only place you can ' +
+              'save a custom <b>📍 respawn point</b> — do it from <b>⚙ Settings</b> while standing in one.' },
       { icon: '💀', title: 'Risk & survival',
-        body: 'When you die, your <b>cash & materials drop</b> where you fell — anyone can grab them. Pick up <b>🩹 medkits</b> & <b>🍗 food</b> to recover. ' +
-              'Set a custom <b>📍 respawn point</b> from <b>⚙ Settings</b> so you come back where you choose. ' +
+        body: 'When you die, your <b>cash & materials drop</b> where you fell — anyone can grab them, so defend your stash or wall it off. ' +
+              'You respawn at your saved point (or the city centre). ' +
               'A <b>boss</b> appears now and then: <b>dodge its red slam circle!</b>' },
       { icon: '✅', title: 'You\'re ready!',
-        body: 'New players get a few seconds of <b>spawn protection</b>. ' + k('Mute sound from the Bag.', 'Press <b>M</b> to mute, <b>Enter</b> to chat.') +
-              ' Reopen this guide anytime from <b>Bag → How to play</b>. Have fun!' },
+        body: 'New players get a few seconds of <b>spawn protection</b>. ' + k('Mute sound from <b>⚙ Settings</b>.', 'Press <b>M</b> to mute, <b>Enter</b> to chat.') +
+              ' Reopen this guide anytime from <b>⚙ Settings → ❔ How to play</b>. Have fun!' },
     ];
   }
 

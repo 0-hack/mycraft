@@ -8,9 +8,10 @@ no installs, no plugins. Just open a URL.
 
 ## Features
 
-- 🌍 **Procedurally generated voxel world** (terrain, water, beaches, trees) — the
-  base world is generated deterministically in every browser from a shared seed,
-  so only player *edits* travel over the network.
+- 🌍 **Procedurally generated voxel city** — *Marina City*, a blocky metropolis of
+  glass towers, neon supertrees, parks and a marina bay. The base world is
+  generated deterministically in every browser from a shared seed, so only player
+  *edits* travel over the network.
 - 👥 **Real-time multiplayer** — see other players move, build and mine live over
   WebSockets, with name tags, a **live minimap** and chat.
 - 🧑‍🎨 **Character customisation** — on first sign-in, design your avatar in a
@@ -46,10 +47,11 @@ no installs, no plugins. Just open a URL.
   player and the right tool (pickaxe/axe) speed it up. Heavier armour slows you
   down, lighter setups run faster.
 - 🎓 **First-time tutorial** — new players get a skippable, device-aware guided
-  tour (movement, mining, building, combat, skills, the bag and survival), plus a
-  few seconds of **spawn protection**. Reopen it anytime from Bag → How to play.
+  tour (movement, mining, building, combat, skills, healing, sanctuaries and
+  survival), plus a few seconds of **spawn protection**. It shows once per
+  account, and you can reopen it anytime from ⚙ Settings → How to play.
 - 👾 **Monsters & solo PvE** — harmless wandering **slimes** (great for
-  beginners), zombies, skeletons (ranged), big slow **brutes** and a periodic
+  beginners), zombies, fast **skeletons**, big slow **brutes** and a periodic
   **Warlord boss**, each with a distinct look. Aggressive monsters chase but are
   slower than you and **give up if you run far enough**; **stronger monsters
   ignore low-level players** unless attacked first; monster numbers scale with how
@@ -70,9 +72,13 @@ no installs, no plugins. Just open a URL.
 - 🛡️ **Moderation** — the admin panel shows recent chat and can **mute** or
   **ban** accounts; a configurable chat **rate limit** curbs spam.
 - 🩹 **Healing patches & food** — collectible **medkits** (restore health) and
-  **food** (restore stamina/hunger) spawn at random spots around the world; walk
-  over one to pick it up. Combat damage, heals and regeneration are
+  **food** (restore hunger) are scattered at ground level all across the map;
+  walk over one to bank it, then use it with `Q` (medkit) / `F` (food) or the
+  on-screen buttons. Combat damage, heals and regeneration are
   server-authoritative so PvP stays fair.
+- 🕊️ **Safe sanctuaries** — glowing no-danger zones (e.g. the Spawn Plaza) where
+  **no monsters or PvP** can reach you and your **health & hunger refill fully**.
+  They're also the only place you can save a custom respawn point.
 - 💰 **Economy & loot** — mine blocks to collect **materials**, then **sell** them
   for cash from your backpack. Your cash and materials stay with you until you
   **die** — then they drop on the spot as lootable treasure for anyone still
@@ -152,41 +158,60 @@ from there.
 
 ## Controls
 
-| Action            | Desktop                        | Mobile                          |
-| ----------------- | ------------------------------ | ------------------------------- |
-| Move              | `W` `A` `S` `D`                | Left-thumb joystick             |
-| Look              | Mouse (click to lock pointer)  | Drag on right half of screen    |
-| Jump / swim up    | `Space`                        | ⤴ button                        |
-| Sprint            | `Shift`                        | —                               |
-| Break block       | Left click                     | ⛏ button                        |
-| Place block       | Right click                    | 🧱 button                       |
-| Select block      | `1`–`9` / scroll wheel         | Tap a hotbar slot               |
-| Chat              | `Enter` or `T`                 | —                               |
-| Leaderboard       | Leaderboard button             | Leaderboard button              |
+| Action               | Desktop                        | Mobile                          |
+| -------------------- | ------------------------------ | ------------------------------- |
+| Move                 | `W` `A` `S` `D`                | Left-thumb joystick             |
+| Look                 | Mouse (click to lock pointer)  | Drag on right half of screen    |
+| Jump / swim up       | `Space`                        | ⤴ button                        |
+| Sprint               | `Shift`                        | —                               |
+| Break block / attack | Left click                     | ⛏ button                        |
+| Place block          | Right click                    | 🧱 button                       |
+| Select block         | `1`–`9` / scroll wheel         | Tap a hotbar slot               |
+| Swap weapon / axe    | `1` (tap slot 1 again)         | Tap slot 1 again                |
+| Class skills         | `Z` `X` `C`                    | Skill buttons by ⛏              |
+| Use healing patch    | `Q`                            | 🩹 button                       |
+| Eat food             | `F`                            | 🍗 button                       |
+| Fly (if granted)     | Hold `Space`                   | Hold 🪽 button                  |
+| Toggle view          | `V`                            | 👁 button                       |
+| Bag                  | `B`                            | 🎒 button                       |
+| Character (skills)   | `K`                            | ⭐ button                       |
+| Settings             | `O`                            | 👤 button                       |
+| Chat                 | `Enter` or `T`                 | —                               |
+| Mute                 | `M`                            | ⚙ Settings → 🔊                 |
+| Leaderboard          | 🏆 button                      | 🏆 button                       |
 
 ## Architecture
 
 ```
 server/
   server.js   Express static host + REST (auth, leaderboard, status) + WS hub
-  game.js     Multiplayer state, edit validation, broadcast, autosave
+  game.js     Multiplayer state, combat, mobs, pickups, single-session, autosave
   world.js    In-memory block-edit overlay backed by SQLite
+  settings.js Difficulty presets + admin-tunable live settings
   auth.js     Register/login, bcrypt hashing, JWT tokens
   db.js       SQLite schema + prepared statements
   config.js   Tunables (port, seed, day length, secrets)
 public/
-  index.html, css/style.css
-  js/main.js    Game loop, renderer, input wiring, day/night
-  js/world.js   Terrain generation + chunk meshing
-  js/player.js  Physics, collision, raycasting, survival
-  js/blocks.js  Block palette + procedural texture atlas
-  js/network.js Auth + WebSocket client
-  js/ui.js      HUD, hotbar, achievements, leaderboard, chat
-  js/mobile.js  Touch controls
-  js/noise.js   Seeded Perlin/fBm noise
+  index.html, admin.html, css/style.css
+  js/main.js     Game loop, renderer, input wiring, day/night
+  js/worldgen.js Shared deterministic city generator + safe zones (client & server)
+  js/world.js    Chunk meshing on top of worldgen
+  js/player.js   Physics, collision, raycasting, survival
+  js/blocks.js   Block palette + procedural texture atlas
+  js/mobs.js     Monster type definitions + drops (shared with server)
+  js/character.js Avatar model + customisation editor
+  js/network.js  Auth + WebSocket client
+  js/ui.js       HUD, hotbar, achievements, leaderboard, chat
+  js/tutorial.js First-time guided tour
+  js/mobile.js   Touch controls
+  js/admin.js    Admin panel client
+  js/noise.js    Seeded Perlin/fBm noise
 ```
 
-The world is **shared**: the procedural terrain is identical for everyone (same
-seed), and only the *differences* — blocks players break or place — are stored
-server-side and synced to all clients. Per-player progress (vitals, score, level,
-achievements, last position) is saved per account.
+The world is **shared**: the procedural city is identical for everyone (same
+seed via `worldgen.js`, used by both the client renderer and the server), and
+only the *differences* — blocks players break or place — are stored server-side
+and synced to all clients. Per-player progress (vitals, score, level,
+achievements, last position) is saved per account. Combat, health and pickups
+are **server-authoritative**, and each account is limited to **one live session**
+at a time.

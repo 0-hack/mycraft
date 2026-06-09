@@ -49,6 +49,20 @@ $('logout').onclick = signOut;
 $('refresh').onclick = () => load();
 
 // ---- settings ----
+// The dashboard auto-refreshes every few seconds for live data (players, loot,
+// chat). We must NOT clobber the settings inputs while the admin is editing
+// them, or a half-typed value snaps back to the stored one. Track "dirty" edits
+// and skip re-filling while a settings field is focused or has unsaved changes.
+let settingsDirty = false;
+document.addEventListener('input', (e) => {
+  const id = e.target && e.target.id;
+  if (typeof id === 'string' && id.startsWith('s-')) settingsDirty = true;
+});
+function settingsBeingEdited() {
+  const a = document.activeElement;
+  return settingsDirty || (a && typeof a.id === 'string' && a.id.startsWith('s-'));
+}
+
 function fillSettings(s) {
   $('s-difficulty').value = s.difficulty;
   $('s-sellMultiplier').value = s.sellMultiplier;
@@ -75,6 +89,7 @@ function fillSettings(s) {
   $('s-skillDmg').value = s.skillDmgMult;
   $('s-skillRange').value = s.skillRangeMult;
   $('s-skillCd').value = s.skillCdMult;
+  settingsDirty = false; // inputs now mirror the server's authoritative values
 }
 
 $('s-save').onclick = async () => {
@@ -171,7 +186,9 @@ function fmtDate(ms) {
 }
 
 function render(data) {
-  fillSettings(data.settings);
+  // Only sync the settings form from the server when the admin isn't editing it,
+  // so an in-progress edit isn't overwritten by the background refresh.
+  if (!settingsBeingEdited()) fillSettings(data.settings);
 
   $('online-count').textContent = data.online.length;
   $('online-body').innerHTML = data.online.map((p) =>

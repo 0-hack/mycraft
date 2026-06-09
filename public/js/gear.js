@@ -7,11 +7,11 @@
 // weapons (bow/gun) and the wand are weak at mining. Mining speed also scales
 // with the player's strength (see miningMult in rpg.js).
 export const WEAPONS = {
-  fist:    { name: 'Fists',   icon: '✊', type: 'melee',  cat: 'melee',  reach: 3.0, dmg: 1, mine: 1, craftable: false },
-  sword:   { name: 'Sword',   icon: '⚔️', type: 'melee',  cat: 'melee',  reach: 4.0, dmg: 6, mine: 2, craftable: true },
-  axe:     { name: 'Axe',     icon: '🪓', type: 'melee',  cat: 'melee',  reach: 3.6, dmg: 4, mine: 4, craftable: true },
-  pickaxe: { name: 'Pickaxe', icon: '⛏️', type: 'melee',  cat: 'melee',  reach: 3.2, dmg: 2, mine: 5, craftable: true },
-  spear:   { name: 'Spear',   icon: '🔱', type: 'melee',  cat: 'melee',  reach: 5.0, dmg: 5, mine: 2, craftable: true },
+  fist:    { name: 'Fists',   icon: '✊', type: 'melee',  cat: 'melee',  reach: 4.5, dmg: 1, mine: 1, craftable: false },
+  sword:   { name: 'Sword',   icon: '⚔️', type: 'melee',  cat: 'melee',  reach: 6.0, dmg: 6, mine: 2, craftable: true },
+  axe:     { name: 'Axe',     icon: '🪓', type: 'melee',  cat: 'melee',  reach: 6.0, dmg: 4, mine: 4, craftable: true },
+  pickaxe: { name: 'Pickaxe', icon: '⛏️', type: 'melee',  cat: 'melee',  reach: 5.5, dmg: 2, mine: 5, craftable: true },
+  spear:   { name: 'Spear',   icon: '🔱', type: 'melee',  cat: 'melee',  reach: 7.0, dmg: 5, mine: 2, craftable: true },
   bow:     { name: 'Bow',     icon: '🏹', type: 'ranged', cat: 'ranged', reach: 26,  dmg: 5, mine: 1, craftable: true },
   gun:     { name: 'Gun',     icon: '🔫', type: 'ranged', cat: 'ranged', reach: 34,  dmg: 9, mine: 1, craftable: true },
   staff:   { name: 'Staff',   icon: '🪄', type: 'ranged', cat: 'magic',  reach: 22,  dmg: 6, mine: 1, craftable: true },
