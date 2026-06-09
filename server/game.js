@@ -8,7 +8,7 @@ import { verifyToken } from './auth.js';
 import { stateQueries, groundQueries, userQueries } from './db.js';
 import { getSettings, clientTuning } from './settings.js';
 import { getAllEdits, setBlock, isSolidAt, getBlockType } from './world.js';
-import { GEN, blockHardness } from '../public/js/worldgen.js';
+import { GEN, blockHardness, inSafeZone } from '../public/js/worldgen.js';
 import {
   weaponStats, equippedWeapon, defenseOf, mitigate, upgradeCost,
   normalizeEquipment, defaultEquipment, classEquipment, WEAPONS, ARMOR, MAX_LEVEL,
@@ -174,6 +174,12 @@ export function attachGame(server) {
     }
   }
 
+  // Shielded = reading the new-player guide (immune + invisible). Protected =
+  // shielded OR standing in a safe sanctuary; protected players can't be hurt or
+  // targeted by anyone (players, monsters, the boss).
+  function isShielded(ctx) { return !!ctx.shielded && (!ctx.shieldUntil || Date.now() < ctx.shieldUntil); }
+  function isProtected(ctx) { return isShielded(ctx) || inSafeZone(ctx.state.x, ctx.state.z); }
+
   function roster() {
     return [...clients.values()].map((c) => ({
       id: c.netId, name: c.user.username,
@@ -181,7 +187,7 @@ export function attachGame(server) {
       yaw: c.state.yaw, pitch: c.state.pitch,
       appearance: safeParse(c.state.appearance, null),
       equipment: normalizeEquipment(safeParse(c.state.equipment, null)),
-      canFly: !!c.canFly, dead: !!c.dead,
+      canFly: !!c.canFly, dead: !!c.dead, shielded: isShielded(c),
     }));
   }
 
@@ -266,7 +272,7 @@ export function attachGame(server) {
             x: state.x, y: state.y, z: state.z, yaw: state.yaw, pitch: state.pitch,
             appearance: safeParse(state.appearance, null),
             equipment: normalizeEquipment(safeParse(state.equipment, null)),
-            canFly: !!ctx.canFly, dead: !!ctx.dead },
+            canFly: !!ctx.canFly, dead: !!ctx.dead, shielded: isShielded(ctx) },
         }, ws);
         for (let i = 0; i < 3; i++) spawnPickup();
         return;
@@ -310,6 +316,7 @@ export function attachGame(server) {
         }
         case 'attack': {
           if (ctx.dead) break;
+          if (isProtected(ctx)) break; // no attacking from a sanctuary / while shielded
           const now = Date.now();
           const prog = safeParse(ctx.state.progress, null);
           if (now - ctx.lastAttack < ATTACK_COOLDOWN * attackCooldownMult(prog)) break;
@@ -425,13 +432,23 @@ export function attachGame(server) {
           break;
         }
         case 'setSpawn': {
-          // Remember the player's current position as their respawn point.
+          // You can only save your respawn point inside a safe sanctuary.
           if (ctx.dead) break;
           const s = ctx.state;
           if (![s.x, s.y, s.z].every(Number.isFinite)) break;
+          if (!inSafeZone(s.x, s.z)) { send(ws, { type: 'spawnDenied' }); break; }
           s.spawn_x = s.x; s.spawn_y = s.y; s.spawn_z = s.z;
           saveState(s);
           send(ws, { type: 'spawnSet', x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) });
+          break;
+        }
+        case 'guide': {
+          // While reading the new-player guide the player is shielded: immune to
+          // damage and invisible/untargetable to others. Auto-expires for safety.
+          const on = !!msg.open;
+          ctx.shielded = on;
+          ctx.shieldUntil = on ? Date.now() + 5 * 60 * 1000 : 0;
+          broadcast({ type: 'playerShield', id: ctx.netId, on }, ws);
           break;
         }
         case 'chat': {
@@ -710,6 +727,8 @@ export function attachGame(server) {
     if (!skill) return;
     const lvl = p.skills[skill.id] || 0;
     if (lvl <= 0) return; // not learned
+    // No offensive skills from a sanctuary / while shielded (self heal/buff ok).
+    if ((skill.kind === 'nuke' || skill.kind === 'aoe') && isProtected(ctx)) return;
     const now = Date.now();
     const cfg = getSettings();
     if (now - (ctx.skillCd[skill.id] || 0) < skill.cd * cfg.skillCdMult) return;
@@ -766,6 +785,8 @@ export function attachGame(server) {
     if (target.dead || ts.health <= 0) return;
     // Spawn protection negates ALL damage (fall + attacks) for the window.
     if (target.invulnUntil && target.invulnUntil > Date.now()) return;
+    // Reading the guide, or inside a safe sanctuary → immune.
+    if (isProtected(target)) return;
     ts.health = Math.max(0, ts.health - dmg);
     target.dead = ts.health <= 0;
     pushHealth(target, { hit: true, by: attacker?.user.username, dmg: Math.round(dmg), fx });
@@ -957,7 +978,7 @@ export function attachGame(server) {
       let tgt = null;
       if (m.target != null) {
         const c = players.find((p) => p.netId === m.target);
-        if (c && Math.hypot(c.state.x - m.x, c.state.z - m.z) <= def.leash && Math.abs(c.state.y - m.y) <= MAX_CHASE_DY) tgt = c;
+        if (c && !isProtected(c) && Math.hypot(c.state.x - m.x, c.state.z - m.z) <= def.leash && Math.abs(c.state.y - m.y) <= MAX_CHASE_DY) tgt = c;
         else m.target = null;
       }
       if (!tgt) {
@@ -965,6 +986,7 @@ export function attachGame(server) {
         for (const c of players) {
           // Strong monsters ignore low-level players unless provoked.
           if (def.minLevel && playerLevel(c) < def.minLevel) continue;
+          if (isProtected(c)) continue; // can't see/target a sheltered or shielded player
           if (Math.abs(c.state.y - m.y) > MAX_CHASE_DY) continue; // can't reach a flyer — ignore
           const d = Math.hypot(c.state.x - m.x, c.state.z - m.z);
           if (d < bd) { bd = d; best = c; }
@@ -1263,6 +1285,7 @@ function losBlocked(ax, ay, az, bx, by, bz) {
 // blocks a monster standing at (x,z). Checks the two body cells just above the
 // surface the mob stands on, so walls of any reasonable height stop them.
 function mobBlocked(x, z, y) {
+  if (inSafeZone(x, z)) return true; // monsters (and the boss) cannot enter sanctuaries
   const bx = Math.floor(x), bz = Math.floor(z);
   const by = Math.round(y); // standing level (feet rest on the block below this)
   return isSolidAt(bx, by, bz) || isSolidAt(bx, by + 1, bz);

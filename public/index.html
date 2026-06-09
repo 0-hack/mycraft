@@ -38,6 +38,7 @@
     <div id="hurt-flash"></div>
     <div id="crosshair">＋</div>
     <div id="fly-indicator" class="hidden">🪽 Hold to fly · steer with move + look</div>
+    <div id="safe-indicator" class="hidden">🕊 Safe sanctuary</div>
     <div id="target-bracket" class="hidden"><i></i><i></i><i></i><i></i></div>
     <div id="mine-bar"><div></div></div>
     <div id="floats"></div>
@@ -85,7 +86,7 @@
         <p>Your progress is saved. You'll respawn at your saved spawn point
           (set one via ⚙ Settings → 📍 Set spawn point), or the city centre.</p>
         <button id="btn-respawn">Respawn</button>
-        <p class="hint" style="margin-top:8px">Press <b>Enter</b> or <b>Esc</b> to respawn.</p>
+        <p class="hint desktop-only" style="margin-top:8px">Press <b>Enter</b> or <b>Esc</b> to respawn.</p>
       </div>
     </div>
 
@@ -160,7 +161,7 @@
         <button class="panel-exit" data-close="settings">✕</button>
       </div>
       <div class="set-row">
-        <label for="set-sensitivity">🖱 Mouse sensitivity <b id="set-sensitivity-val">×1.0</b></label>
+        <label for="set-sensitivity">🎯 Look sensitivity <b id="set-sensitivity-val">×1.0</b></label>
         <input id="set-sensitivity" type="range" min="1" max="20" step="1" value="5" />
       </div>
       <div class="set-actions">
@@ -173,9 +174,11 @@
         <button id="btn-logout" class="secondary">Log out</button>
         <button id="btn-delete-account" class="danger">Delete account</button>
       </div>
-      <p class="hint">⌨ Desktop keys: <b>B</b> Bag · <b>K</b> Character (skills &amp; attributes) ·
+      <p class="hint desktop-only">⌨ Desktop keys: <b>B</b> Bag · <b>K</b> Character (skills &amp; attributes) ·
         <b>O</b> Settings · <b>V</b> View · <b>1</b> swap weapon/axe · <b>Z X C</b> skills ·
         <b>Q</b> medkit · <b>F</b> food · <b>M</b> mute.</p>
+      <p class="hint mobile-only">👆 Tap the on-screen buttons to open your Bag, Character and View. Use the
+        skill buttons by the attack button, and the 🩹/🍗 buttons to heal &amp; eat.</p>
     </div>
   </div>
 

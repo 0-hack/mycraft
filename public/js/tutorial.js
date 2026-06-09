@@ -68,7 +68,7 @@ export class Tutorial {
   }
 
   open() { this._once(); this._build(); this.i = 0; this.el.classList.remove('hidden'); this.render(); }
-  close() { if (this.el) this.el.classList.add('hidden'); localStorage.setItem(KEY, '1'); }
+  close() { if (this.el) this.el.classList.add('hidden'); localStorage.setItem(KEY, '1'); if (this.onClose) this.onClose(); }
   go(n) { this.i = Math.max(0, Math.min(this.steps.length - 1, n)); this.render(); }
 
   render() {

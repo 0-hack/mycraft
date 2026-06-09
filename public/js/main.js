@@ -15,6 +15,7 @@ import { addAccent } from './detail.js';
 import { equippedWeapon, speedMultiplier, bodyArmorWeight, defaultEquipment, WEAPONS } from './gear.js';
 import { speedAttrMult, hungerMult, maxHealth, defaultProgress, classSkills, CLASSES, rangeMult } from './rpg.js';
 import { MOB_TYPES } from './mobs.js';
+import { SAFE_ZONES, inSafeZone } from './worldgen.js';
 import * as audio from './audio.js';
 
 const net = new Network();
@@ -168,6 +169,7 @@ function setupNetwork() {
     world.loadEdits(msg.edits);
     minimap.world = world; // lets the minimap render the actual city layout
     scene.add(highlight);
+    buildSafeZones();
 
     const spawn = (msg.state && Number.isFinite(msg.state.x))
       ? { x: msg.state.x, y: msg.state.y, z: msg.state.z } : SPAWN;
@@ -202,14 +204,18 @@ function setupNetwork() {
     ui.addChat('', 'Welcome to MyCraft! Build, mine and explore together.', true);
 
     setupInput();
+    tutorial.onClose = () => setGuideShield(false); // drop the shield when the guide is closed
     requestAnimationFrame(loop);
 
     // First-time players go to the character creator before they get going.
+    // They're shielded (immune + invisible) while setting up / reading the guide.
     myAppearance = msg.state?.appearance || null;
     if (!myAppearance) {
+      setGuideShield(true);
       charEditor.open(null, myProgress.class, saveAppearance);
       ui.addChat('', 'Create your character & pick a class to get started — reopen via 🎒 Bag → Customise.', true);
     } else if (!tutorialSeen()) {
+      setGuideShield(true);
       tutorial.open();
     }
   });
@@ -262,6 +268,11 @@ function setupNetwork() {
     ui.toast(`📍 Respawn point set here (${msg.x}, ${msg.y}, ${msg.z}).`);
     spawnPointSet = true;
     refreshSpawnBtn();
+  });
+  net.on('spawnDenied', () => ui.toast('🕊 You can only set your spawn inside a safe sanctuary (look for the green dome).'));
+  net.on('playerShield', (msg) => { // a player started/stopped reading the guide
+    const r = remotePlayers.get(msg.id);
+    if (r) { r.shielded = !!msg.on; if (r.group) r.group.visible = !r.shielded; }
   });
   net.on('crafted', (msg) => {
     if (msg && msg.action === 'equip') { audio.play('place'); return; } // quiet weapon swap
@@ -791,6 +802,34 @@ function remoteSkillEffect(skillId, kind, pos) {
   }
 }
 
+// ---- safe sanctuaries: a calm green dome + ground ring + light column ----
+const safeZoneMeshes = [];
+function buildSafeZones() {
+  if (!scene) return;
+  for (const z of SAFE_ZONES) {
+    const g = new THREE.Group();
+    g.position.set(z.x, GROUND_Y, z.z);
+    const ground = new THREE.Mesh(new THREE.RingGeometry(z.r - 0.4, z.r, 48), bmat(0x7fffc0, 0.5));
+    ground.rotation.x = -Math.PI / 2; ground.position.y = 0.08; g.add(ground);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(z.r, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x8effc8, transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false }));
+    g.add(dome);
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 6, 10, 1, true), bmat(0xaaffd6, 0.25));
+    col.position.y = 3; g.add(col);
+    g.userData.r = z.r;
+    scene.add(g); safeZoneMeshes.push(g);
+  }
+}
+function updateSafeZones(now) {
+  for (const g of safeZoneMeshes) {
+    g.rotation.y = now / 3000;
+    const p = 1 + Math.sin(now / 500) * 0.02;
+    g.children[0].scale.setScalar(p); // ground ring breathes
+    g.children[0].material.opacity = 0.4 + Math.sin(now / 500) * 0.12;
+  }
+}
+const GROUND_Y = 22; // street surface (matches worldgen GEN.GROUND)
+
 // ---------------------------------------------------------------- third-person
 let thirdPerson = false;
 let ownAvatar = null;
@@ -975,6 +1014,22 @@ function refreshFlyIndicator() {
     : (isTouchDevice() ? '🪽 Tap 🪽 to fly' : '🪽 Press G to fly');
 }
 
+// ---- new-player guide shield (immune + invisible while reading) ----
+let guideShielded = false;
+function setGuideShield(on) {
+  guideShielded = !!on;
+  if (net) net.sendGuide(guideShielded);
+}
+
+// HUD banner shown while protected (reading the guide) or inside a sanctuary.
+function updateSafeHud() {
+  const el = document.getElementById('safe-indicator');
+  if (!el || !player) return;
+  if (guideShielded) { el.textContent = '🛡 Reading the guide — you are hidden & protected'; el.classList.remove('hidden'); }
+  else if (inSafeZone(player.pos.x, player.pos.z)) { el.textContent = '🕊 Safe sanctuary — no PvP or monsters · 📍 you can set your spawn here'; el.classList.remove('hidden'); }
+  else el.classList.add('hidden');
+}
+
 // ---- custom respawn point ----
 let spawnPointSet = false;
 function refreshSpawnBtn() {
@@ -1019,11 +1074,12 @@ function addRemote(p) {
   if (remotePlayers.has(p.id)) return;
   const group = makeAvatar(p.name, p.appearance, p.equipment, p.canFly);
   group.position.set(p.x, p.y, p.z);
+  group.visible = !p.shielded; // hidden while they read the guide
   scene.add(group);
   remotePlayers.set(p.id, {
     group, target: new THREE.Vector3(p.x, p.y, p.z), yaw: p.yaw || 0, pitch: p.pitch || 0,
     name: p.name, appearance: p.appearance, equipment: p.equipment,
-    canFly: !!p.canFly, dead: !!p.dead, bodyYaw: p.yaw || 0, painUntil: 0,
+    canFly: !!p.canFly, dead: !!p.dead, shielded: !!p.shielded, bodyYaw: p.yaw || 0, painUntil: 0,
     phase: 0, swing: 0, lastPos: new THREE.Vector3(p.x, p.y, p.z),
   });
 }
@@ -1034,6 +1090,7 @@ function rebuildRemoteAvatar(r) {
   const group = makeAvatar(r.name, r.appearance, r.equipment, r.canFly);
   group.position.copy(old.position);
   group.rotation.y = old.rotation.y;
+  group.visible = !r.shielded;
   scene.add(group);
   scene.remove(old);
   r.group = group;
@@ -2116,6 +2173,8 @@ function loop(now) {
   updateSkillBar(now);
   updateSprintUI();
   updateAuras(now);
+  updateSafeZones(now);
+  updateSafeHud();
   updateFloats(dt);
   minimap.draw(player, remotePlayers, mobEntities);
 

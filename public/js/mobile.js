@@ -14,7 +14,12 @@ export function setupMobileControls(player, ui, actions) {
   const moveStick = document.getElementById('joystick');
   const moveKnob = moveStick.querySelector('.knob');
 
-  const LOOK_SENS = 0.005; // radians of turn per pixel dragged
+  // Look sensitivity (radians per pixel dragged) — shares the Settings slider
+  // with the desktop mouse (stored as vc_sensitivity), scaled for touch drags.
+  const lookSens = () => {
+    const v = parseFloat(localStorage.getItem('vc_sensitivity'));
+    return (Number.isFinite(v) && v > 0 ? v : 0.0013) * 3.85;
+  };
   // The joystick size is responsive (scaled in CSS), so derive the knob travel
   // and centring offset from the element's actual rendered size each time.
   const baseSize = () => moveStick.offsetWidth || 130;
@@ -85,7 +90,8 @@ export function setupMobileControls(player, ui, actions) {
   }
   function updateLook(t) {
     if (Math.hypot(t.clientX - lookStart.x, t.clientY - lookStart.y) > 12) lookStart.moved = true;
-    player.look((t.clientX - lookLast.x) * LOOK_SENS, (t.clientY - lookLast.y) * LOOK_SENS);
+    const s = lookSens();
+    player.look((t.clientX - lookLast.x) * s, (t.clientY - lookLast.y) * s);
     lookLast = { x: t.clientX, y: t.clientY };
   }
   function endLook() {

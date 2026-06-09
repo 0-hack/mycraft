@@ -2,6 +2,7 @@
 // an arrow facing their heading. The actual generated city is drawn — water
 // bays, green parks, building footprints and the road grid — plus other players
 // and monsters as dots (clamped to the rim when out of range).
+import { SAFE_ZONES } from './worldgen.js';
 const PERIOD = 16;            // city grid period (must match world.js)
 const ROAD = 4;               // road width in blocks
 const FOOT0 = 6, FOOT1 = 13;  // building footprint (8x8) within a cell
@@ -84,6 +85,15 @@ export class Minimap {
       for (let ccz = cell0z; ccz <= cell1z; ccz++) {
         ctx.fillRect(cx - R, sZ(ccz * PERIOD), R * 2, band);
       }
+    }
+
+    // Safe sanctuaries: soft green discs with a 🕊 marker.
+    for (const s of SAFE_ZONES) {
+      ctx.beginPath();
+      ctx.arc(sX(s.x), sZ(s.z), Math.max(3, s.r * scale), 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(127,255,176,0.22)';
+      ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(127,255,176,0.8)'; ctx.stroke();
     }
 
     // Other players, each a distinct colour derived from their name so they're

@@ -24,6 +24,20 @@ export function blockHardness(type) { return HARDNESS[type] ?? 1.0; }
 
 // Marina City layout constants (kept in sync with world.js).
 export const GEN = { GROUND: 22, WORLD_HEIGHT: 48, PERIOD: 16, ROAD: 4, FOOT0: 6, FOOT1: 13 };
+
+// Safe sanctuaries: inside these no player can hurt another and no monster
+// (boss included) may enter or attack. Players can only save their respawn
+// point while standing in one. Shared by the client (aura) and server (rules).
+export const SAFE_ZONES = [
+  { x: 8, z: 8, r: 10, name: 'Spawn Plaza' }, // the bayside spawn plaza (always open)
+  { x: 66, z: 2, r: 6 },
+  { x: 2, z: 66, r: 6 },
+  { x: 66, z: 66, r: 6 },
+];
+export function inSafeZone(x, z) {
+  for (const s of SAFE_ZONES) { const dx = x - s.x, dz = z - s.z; if (dx * dx + dz * dz <= s.r * s.r) return true; }
+  return false;
+}
 const { GROUND, WORLD_HEIGHT, PERIOD, ROAD, FOOT0, FOOT1 } = GEN;
 const imod = (n, m) => ((n % m) + m) % m;
 

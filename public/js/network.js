@@ -76,6 +76,8 @@ export class Network {
   sendAppearance(appearance) { this.send({ type: 'appearance', appearance }); }
   sendRespawn() { this.send({ type: 'respawn' }); }
   sendSetSpawn() { this.send({ type: 'setSpawn' }); }
+  // Toggle the new-player "reading the guide" shield (immune + invisible).
+  sendGuide(open) { this.send({ type: 'guide', open: !!open }); }
   sendChat(text) { this.send({ type: 'chat', text }); }
 
   // Delete the logged-in player's own account.
