@@ -12,7 +12,7 @@ import { buildCharacter, animateCharacter, addWings, setPainFace } from './chara
 import { CharacterEditor } from './chareditor.js';
 import { Tutorial } from './tutorial.js';
 import { addAccent } from './detail.js';
-import { equippedWeapon, speedMultiplier, bodyArmorWeight, defaultEquipment, WEAPONS } from './gear.js';
+import { equippedWeapon, speedMultiplier, bodyArmorWeight, defaultEquipment, WEAPONS, blockReach } from './gear.js';
 import { speedAttrMult, hungerMult, maxHealth, defaultProgress, classSkills, CLASSES, rangeMult } from './rpg.js';
 import { MOB_TYPES } from './mobs.js';
 import { SAFE_ZONES, inSafeZone } from './worldgen.js';
@@ -1402,7 +1402,7 @@ function computeAim(w) {
   // displaced camera (otherwise targets read as out of reach).
   player.syncCamera();
   const target = findTarget(w);
-  const r = player.raycast();
+  const r = player.raycast(blockReach(w)); // can only mine/build within the weapon's reach
   let blockDist = Infinity, blockPoint = null;
   if (r) {
     blockPoint = new THREE.Vector3(r.hit.x + 0.5, r.hit.y + 0.5, r.hit.z + 0.5);
@@ -1489,7 +1489,7 @@ function updateMining(dt) {
   const ranged = w.cat === 'ranged' || w.cat === 'magic';
   mineState.swingT -= dt;
   mineState.sendT -= dt;
-  const r = player.raycast();
+  const r = player.raycast(blockReach(w)); // melee chips only nearby blocks; ranged reaches further
   const t = r ? world.getBlock(r.hit.x, r.hit.y, r.hit.z) : B.AIR;
   const minable = r && t !== B.AIR && t !== B.BEDROCK;
 
@@ -1779,7 +1779,7 @@ function placeBlock() {
     audio.play('swing');
     return;
   }
-  const r = player.raycast();
+  const r = player.raycast(blockReach(equippedWeapon(myEquipment))); // build within reach only
   if (!r) return;
   const { x, y, z } = r.place;
   if (!player.canPlaceAt(x, y, z)) return;

@@ -11,7 +11,7 @@ import { getAllEdits, setBlock, isSolidAt, getBlockType } from './world.js';
 import { GEN, blockHardness, inSafeZone } from '../public/js/worldgen.js';
 import {
   weaponStats, equippedWeapon, defenseOf, mitigate, upgradeCost,
-  normalizeEquipment, defaultEquipment, classEquipment, WEAPONS, ARMOR, MAX_LEVEL,
+  normalizeEquipment, defaultEquipment, classEquipment, WEAPONS, ARMOR, MAX_LEVEL, blockReach,
 } from '../public/js/gear.js';
 import {
   defaultProgress, normalizeProgress, addXp, maxHealth, damageMult,
@@ -529,6 +529,9 @@ export function attachGame(server) {
     if (ctx.dead) return;
 
     const s = ctx.state;
+    // Breaking/placing is gated by the equipped weapon's reach, same as mining.
+    const reach = blockReach(equippedWeapon(safeParse(s.equipment, null))) + 1.5;
+    if (Math.hypot(x + 0.5 - s.x, y + 0.5 - (s.y + 1.4), z + 0.5 - s.z) > reach) return;
     if (action === 'break') {
       setBlock(x, y, z, 0);
       s.blocks_mined += 1;
@@ -571,12 +574,13 @@ export function attachGame(server) {
     const x = Math.round(msg.x), y = Math.round(msg.y), z = Math.round(msg.z);
     if (![x, y, z].every(Number.isFinite) || y < 1 || y > 63) return;
     const s = ctx.state;
-    // Must be within reach of the player (small slack for latency).
-    if (Math.hypot(x + 0.5 - s.x, y + 0.5 - (s.y + 1.4), z + 0.5 - s.z) > 7) return;
+    const w = equippedWeapon(safeParse(s.equipment, null));
+    // Must be within the equipped weapon's reach (small slack for latency / eye
+    // height). Melee weapons only chip nearby blocks; ranged reach much further.
+    if (Math.hypot(x + 0.5 - s.x, y + 0.5 - (s.y + 1.4), z + 0.5 - s.z) > blockReach(w) + 1.5) return;
     const type = getBlockType(x, y, z);
     if (!isSolidAt(x, y, z) || type === 1 /* bedrock */) return;
 
-    const w = equippedWeapon(safeParse(s.equipment, null));
     const rate = (1 + (w.mine || 0) * 0.4) * miningMult(safeParse(s.progress, null));
     const now = Date.now();
     const k = `${x},${y},${z}`;

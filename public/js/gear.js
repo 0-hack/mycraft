@@ -93,6 +93,13 @@ export function mitigate(dmg, defense) {
   return Math.max(1, Math.round(dmg * (1 - Math.min(0.8, defense * 0.04))));
 }
 
+// How far blocks can be mined/placed with a weapon in hand. Melee weapons use
+// their (short) reach so you must stand right next to a brick — an axe/sword
+// only ~1 block away, a spear a little further. Ranged weapons reach further but
+// are capped so you can't break bricks across the map.
+export const BLOCK_REACH_CAP = 6;
+export function blockReach(w) { return Math.min((w && w.reach) || BLOCK_REACH_CAP, BLOCK_REACH_CAP); }
+
 // Cost to craft (0→1) or upgrade (L→L+1): cash + total raw-material units.
 export function upgradeCost(currentLevel) {
   const next = currentLevel + 1;
