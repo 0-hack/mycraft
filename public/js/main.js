@@ -331,8 +331,7 @@ function setupNetwork() {
   net.on('pickupRemove', (msg) => removePickup(msg.id));
   net.on('pickupGot', (msg) => {
     audio.play('pickup');
-    const icon = msg.kind === 'medkit' ? '🩹' : '🍗';
-    lootPop(msg, '+' + icon, msg.kind === 'medkit' ? '#7fe3a0' : '#f4d35e', 0x7fe3a0);
+    lootPop(msg, msg.kind === 'medkit' ? '🩹' : '🍗', msg.kind === 'medkit' ? 0x7fe3a0 : 0xf4d35e);
   });
   net.on('groundItemSpawn', (msg) => addGround(msg.item));
   net.on('groundItemRemove', (msg) => removeGround(msg.id));
@@ -366,8 +365,7 @@ function setupNetwork() {
   });
   net.on('looted', (msg) => {
     audio.play('coin');
-    const text = msg.cash ? `+💰${msg.cash}` : (msg.count ? `+🎒${msg.count}` : '');
-    if (text) lootPop(msg, text, '#ffd23f', 0xffd23f);
+    lootPop(msg, msg.cash ? '💰' : '🎒', 0xffd23f);
   });
   net.on('playerAppearance', (msg) => {
     const r = remotePlayers.get(msg.id);
@@ -1886,13 +1884,28 @@ function worldFloat(x, y, z, text, color, big) {
   const life = big ? 1.1 : 0.9;
   floats3d.push({ sp, life, max: life });
 }
-// Small in-world pop where a pickup / loot stash was collected — a rising icon
-// plus a sparkle. Replaces the old center-screen toast so rapid looting never
-// blocks the player's view.
-function lootPop(msg, text, textColor, sparkColor) {
+// A quick pickup *effect* where a pickup / loot stash was collected — a sparkle
+// burst plus a small icon that pops and fades right at the loot. No drifting
+// text, so rapid looting never reads as a message blocking the player's view.
+function lootPop(msg, icon, sparkColor) {
   if (!scene || !Number.isFinite(msg.x)) return;
-  worldFloat(msg.x, msg.y + 0.6, msg.z, text, textColor, false);
   spawnBurst(new THREE.Vector3(msg.x, msg.y + 0.4, msg.z), sparkColor);
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.font = '34px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(icon, 24, 26);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true }));
+  sp.position.set(msg.x, msg.y + 0.7, msg.z);
+  sp.scale.set(0.5, 0.5, 0.5);
+  scene.add(sp);
+  let t = 0;
+  const tick = () => {
+    t += 0.05; const k = Math.min(1, t / 0.45);
+    const s = 0.5 + k * 0.45; sp.scale.set(s, s, s);
+    sp.position.y += 0.012; sp.material.opacity = 1 - k;
+    if (t < 0.45) requestAnimationFrame(tick);
+    else { scene.remove(sp); sp.material.map.dispose(); sp.material.dispose(); }
+  };
+  requestAnimationFrame(tick);
 }
 function updateFloats(dt) {
   for (let i = floats3d.length - 1; i >= 0; i--) {

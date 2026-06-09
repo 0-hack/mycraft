@@ -34,6 +34,9 @@ const REACH_SLACK = 1.0;
 const PVP_DMG_MULT = 0.6;
 const ATTACK_COOLDOWN = 300;
 const KILL_SCORE = 50;
+// The boss only unleashes its ground-slam AoE when a target is this close — no
+// more slamming players from across the map.
+const BOSS_SLAM_RANGE = 8;
 // You can only be attacked by something on roughly your own level: fly/climb
 // above this many blocks and grounded monsters/players can't reach you. Ground
 // monsters also won't chase a target higher than this (they stay grounded).
@@ -1079,7 +1082,9 @@ export function attachGame(server) {
         else m.target = null;
       }
       if (!tgt) {
-        let best = null, bd = def.aggro;
+        // The boss hunts any live player within its (large) leash range so it
+        // never goes idle just because one player died; normal mobs use aggro.
+        let best = null, bd = def.boss ? def.leash : def.aggro;
         for (const c of players) {
           // Strong monsters ignore low-level players unless provoked.
           if (def.minLevel && playerLevel(c) < def.minLevel) continue;
@@ -1091,10 +1096,14 @@ export function attachGame(server) {
         if (best) { tgt = best; m.target = best.netId; }
       }
       if (!tgt) {
-        // Lost interest: wander, and despawn if everyone is far away.
-        let near = Infinity;
-        for (const c of players) near = Math.min(near, Math.hypot(c.state.x - m.x, c.state.z - m.z));
-        if (near > 80) { mobs.delete(m.id); broadcast({ type: 'mobRemove', id: m.id }); continue; }
+        // Lost interest: wander, and despawn if everyone is far away. The boss
+        // never despawns — it persists (and keeps hunting) until it's killed, so
+        // dying mid-fight doesn't make it vanish.
+        if (!def.boss) {
+          let near = Infinity;
+          for (const c of players) near = Math.min(near, Math.hypot(c.state.x - m.x, c.state.z - m.z));
+          if (near > 80) { mobs.delete(m.id); broadcast({ type: 'mobRemove', id: m.id }); continue; }
+        }
         wanderMob(m, dt);
         moved.push({ id: m.id, x: m.x, y: m.y, z: m.z, yaw: m.yaw, st: mobStatusCodes(m, now) });
         continue;
@@ -1121,7 +1130,8 @@ export function attachGame(server) {
             moved.push({ id: m.id, x: m.x, y: m.y, z: m.z, yaw: m.yaw, st: mobStatusCodes(m, now) });
             continue;
           }
-        } else if (now - (m.lastSlam || 0) > 6000) {        // start a new slam
+        } else if (now - (m.lastSlam || 0) > 6000
+                   && Math.hypot(tgt.state.x - m.x, tgt.state.z - m.z) <= BOSS_SLAM_RANGE) { // only slam up close
           const radius = 5.5;
           // The slam lands at the boss's (surface) level, so players who dig
           // underground drop below it and are safe (vertical check on detonate).
