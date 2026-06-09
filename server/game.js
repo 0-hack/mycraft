@@ -27,7 +27,7 @@ const SPAWN = { x: 8, y: 40, z: 8, yaw: 0, pitch: 0 };
 
 // Weapon/armor stats come from the shared gear.js. Small slack added to the
 // attacker's reach to tolerate latency between move updates.
-const REACH_SLACK = 1.5;
+const REACH_SLACK = 1.0;
 const ATTACK_COOLDOWN = 300;
 const KILL_SCORE = 50;
 // You can only be attacked by something on roughly your own level: fly/climb
