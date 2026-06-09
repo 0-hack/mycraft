@@ -71,7 +71,7 @@ export class Network {
   sendCraft(req) { this.send({ type: 'craft', ...req }); }
   sendSpendAttr(attr) { this.send({ type: 'spendAttr', attr }); }
   sendSpendSkill(slot) { this.send({ type: 'spendSkill', slot }); }
-  sendSkill(slot, target, targetType) { this.send({ type: 'useSkill', slot, target, targetType }); }
+  sendSkill(slot, target, targetType, aim) { this.send({ type: 'useSkill', slot, target, targetType, aim }); }
   sendSetClass(cls) { this.send({ type: 'setClass', cls }); }
   sendAppearance(appearance) { this.send({ type: 'appearance', appearance }); }
   sendRespawn() { this.send({ type: 'respawn' }); }

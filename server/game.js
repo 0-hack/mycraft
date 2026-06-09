@@ -28,6 +28,10 @@ const SPAWN = { x: 8, y: 40, z: 8, yaw: 0, pitch: 0 };
 // Weapon/armor stats come from the shared gear.js. Small slack added to the
 // attacker's reach to tolerate latency between move updates.
 const REACH_SLACK = 1.0;
+// Player-vs-player damage is scaled down so duels last long enough to be decided
+// by positioning and skill use rather than a single burst. PvE (mobs) is
+// unaffected — this only touches damage dealt by one player to another.
+const PVP_DMG_MULT = 0.6;
 const ATTACK_COOLDOWN = 300;
 const KILL_SCORE = 50;
 // You can only be attacked by something on roughly your own level: fly/climb
@@ -758,7 +762,21 @@ export function attachGame(server) {
     if (now - (ctx.skillCd[skill.id] || 0) < skill.cd * cfg.skillCdMult) return;
     ctx.skillCd[skill.id] = now;
     const s = ctx.state;
-    broadcast({ type: 'skillFx', id: ctx.netId, skill: skill.id, kind: skill.kind, dur: skill.duration || 0, x: s.x, y: s.y, z: s.z }, ws);
+    // Thrown AoE skills (grenade/bomb/volley) detonate at an aimed spot, not on
+    // the caster. Clamp the requested point to the skill's throw range and block
+    // throws straight through a wall, then centre the blast there.
+    let center = { x: s.x, y: s.y, z: s.z };
+    if (skill.kind === 'aoe' && skill.throw && msg.aim) {
+      const maxR = skill.throw * cfg.skillRangeMult;
+      let ax = Number(msg.aim.x), ay = Number(msg.aim.y), az = Number(msg.aim.z);
+      if ([ax, ay, az].every(Number.isFinite)) {
+        const dx = ax - s.x, dy = ay - s.y, dz = az - s.z;
+        const d = Math.hypot(dx, dy, dz);
+        if (d > maxR && d > 0) { const k = maxR / d; ax = s.x + dx * k; ay = s.y + dy * k; az = s.z + dz * k; }
+        if (!losBlocked(s.x, s.y + 1.6, s.z, ax, ay + 0.5, az)) center = { x: ax, y: ay, z: az };
+      }
+    }
+    broadcast({ type: 'skillFx', id: ctx.netId, skill: skill.id, kind: skill.kind, dur: skill.duration || 0, x: center.x, y: center.y, z: center.z }, ws);
     const val = skill.base + lvl * skill.per;
     const nukeRange = 36 * cfg.skillRangeMult;
 
@@ -787,12 +805,12 @@ export function attachGame(server) {
       }
     } else if (skill.kind === 'aoe') {
       const rad = (skill.radius + lvl * 0.4) * cfg.skillRangeMult;
-      for (const m of [...mobs.values()]) if (dist3(s, m) <= rad) {
+      for (const m of [...mobs.values()]) if (dist3(center, m) <= rad) {
         const r = critize(p, basePower);
         applyStatuses(m.effects, skill.status, lvl, ctx.netId); hurtMob(m, Math.round(r.dmg), ctx, r.crit ? 'crit' : 'skill');
       }
       for (const c of clients.values()) {
-        if (c === ctx || c.dead || dist3(s, c.state) > rad) continue;
+        if (c === ctx || c.dead || dist3(center, c.state) > rad) continue;
         const r = critize(p, basePower);
         const def = defenseOf(safeParse(c.state.equipment, null)) + defenseBonus(safeParse(c.state.progress, null)) + buffMult(c, 'def', 0);
         applyPlayerStatus(c, skill.status, lvl, ctx.netId);
@@ -816,6 +834,8 @@ export function attachGame(server) {
     if (target.invulnUntil && target.invulnUntil > Date.now()) return;
     // Reading the guide, or inside a safe sanctuary → immune.
     if (isProtected(target)) return;
+    // PvP damage (player attacker, combat cause) is softened for fairer duels.
+    if (attacker && attacker !== target && cause === 'combat') dmg = Math.max(1, Math.round(dmg * PVP_DMG_MULT));
     ts.health = Math.max(0, ts.health - dmg);
     target.dead = ts.health <= 0;
     pushHealth(target, { hit: true, by: attacker?.user.username, dmg: Math.round(dmg), fx });

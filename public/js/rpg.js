@@ -18,26 +18,29 @@ export const ATTR_INFO = {
 
 // Starting "genes". `mult` scales weapon-category damage; biases shape playstyle.
 export const CLASSES = {
+  // All classes start with the SAME 16-point attribute budget so a same-level
+  // duel is decided by playstyle/gear, not a lopsided stat total. Roles are
+  // expressed through how those points are spread and the damage multipliers.
   soldier: { name: 'Soldier', icon: '🛡️',
     desc: 'Tough melee bruiser — strong & hardy, poor at range and magic.',
     base: { str: 5, dex: 1, int: 0, end: 4, vit: 4, spd: 2 },
     mult: { melee: 1.25, ranged: 0.8, magic: 0.5 }, favored: 'sword' },
   archer: { name: 'Archer', icon: '🏹',
-    desc: 'Deadly with a bow at range; fragile in a brawl.',
-    base: { str: 2, dex: 6, int: 1, end: 1, vit: 2, spd: 4 },
-    mult: { melee: 0.8, ranged: 1.3, magic: 0.6 }, favored: 'bow' },
+    desc: 'Mobile skirmisher — deadly with a bow at range; fragile in a brawl.',
+    base: { str: 2, dex: 6, int: 0, end: 2, vit: 2, spd: 4 },
+    mult: { melee: 0.8, ranged: 1.2, magic: 0.6 }, favored: 'bow' },
   gunman: { name: 'Gunman', icon: '🔫',
-    desc: 'Master of firearms — high ranged burst, light on defence.',
-    base: { str: 2, dex: 5, int: 2, end: 1, vit: 2, spd: 3 },
-    mult: { melee: 0.8, ranged: 1.3, magic: 0.7 }, favored: 'gun' },
+    desc: 'Master of firearms — high ranged burst, but slow on his feet.',
+    base: { str: 2, dex: 6, int: 0, end: 3, vit: 3, spd: 2 },
+    mult: { melee: 0.8, ranged: 1.2, magic: 0.6 }, favored: 'gun' },
   mage: { name: 'Mage', icon: '🧙',
     desc: 'Wields magic none other can — devastating spells, frail body.',
-    base: { str: 0, dex: 1, int: 7, end: 1, vit: 2, spd: 2 },
-    mult: { melee: 0.6, ranged: 0.8, magic: 1.7 }, favored: 'staff' },
+    base: { str: 1, dex: 1, int: 7, end: 2, vit: 3, spd: 2 },
+    mult: { melee: 0.6, ranged: 0.7, magic: 1.45 }, favored: 'staff' },
   artisan: { name: 'Artisan', icon: '🛠️',
-    desc: 'Master crafter — cheaper, well-rounded gear offsets modest stats.',
-    base: { str: 3, dex: 2, int: 3, end: 2, vit: 3, spd: 2 },
-    mult: { melee: 1.0, ranged: 1.0, magic: 0.8 }, craftDiscount: 0.4, favored: 'axe' },
+    desc: 'Master crafter — cheaper gear and a sturdy, well-rounded body.',
+    base: { str: 3, dex: 2, int: 2, end: 3, vit: 4, spd: 2 },
+    mult: { melee: 1.3, ranged: 1.0, magic: 0.8 }, craftDiscount: 0.4, favored: 'axe' },
 };
 
 // ---- Class skills (3 per class, levels 0..5) -----------------------------
@@ -53,22 +56,22 @@ export const CLASS_SKILLS = {
     { id: 'charge',  name: 'Charge',    icon: '💨', kind: 'buff', buffStat: 'speed', base: 1.4, per: 0.1, duration: 3000, cd: 8000, blurb: 'Burst of speed to close in or flee.' },
   ],
   archer: [
-    { id: 'powershot', name: 'Power Shot', icon: '🏹', kind: 'nuke', cat: 'ranged', base: 12, per: 5, cd: 4000, status: [{ type: 'burn', mag: 3, duration: 4000 }], blurb: 'Piercing shot that leaves a bleed.' },
-    { id: 'volley',    name: 'Volley',     icon: '☄️', kind: 'aoe',  cat: 'ranged', base: 5, per: 3, radius: 4.0, cd: 7000, blurb: 'Rain arrows on everything nearby.' },
+    { id: 'powershot', name: 'Power Shot', icon: '🏹', kind: 'nuke', cat: 'ranged', base: 10, per: 4, cd: 4000, status: [{ type: 'burn', mag: 3, duration: 4000 }], blurb: 'Piercing shot that leaves a bleed.' },
+    { id: 'volley',    name: 'Volley',     icon: '☄️', kind: 'aoe',  cat: 'ranged', base: 5, per: 3, radius: 4.0, throw: 20, cd: 7000, blurb: 'Rain arrows on a spot you aim at.' },
     { id: 'dodge',     name: 'Dodge Roll', icon: '🤸', kind: 'buff', buffStat: 'speed', base: 1.5, per: 0.1, duration: 2500, cd: 6000, blurb: 'Quick burst of speed to reposition.' },
   ],
   gunman: [
-    { id: 'headshot',  name: 'Headshot',   icon: '🎯', kind: 'nuke', cat: 'ranged', base: 16, per: 7, cd: 4500, blurb: 'High-damage precision shot.' },
-    { id: 'grenade',   name: 'Grenade',    icon: '💣', kind: 'aoe',  cat: 'ranged', base: 8, per: 4, radius: 4.5, cd: 8000, status: [{ type: 'stun', duration: 1000 }], blurb: 'Explosive blast that stuns monsters.' },
+    { id: 'headshot',  name: 'Headshot',   icon: '🎯', kind: 'nuke', cat: 'ranged', base: 12, per: 5, cd: 4500, blurb: 'High-damage precision shot.' },
+    { id: 'grenade',   name: 'Grenade',    icon: '💣', kind: 'aoe',  cat: 'ranged', base: 8, per: 4, radius: 4.5, throw: 18, cd: 8000, status: [{ type: 'stun', duration: 1000 }], blurb: 'Lob an explosive at a spot; stuns monsters.' },
     { id: 'adrenaline',name: 'Adrenaline', icon: '⚡', kind: 'buff', buffStat: 'dmg', base: 1.3, per: 0.08, duration: 6000, cd: 14000, blurb: 'Pump up your damage for a while.' },
   ],
   mage: [
-    { id: 'fireball',  name: 'Fireball',  icon: '🔥', kind: 'nuke', cat: 'magic', base: 14, per: 6, cd: 3500, status: [{ type: 'burn', mag: 4, duration: 4000 }], blurb: 'Hurl a fireball that sets the target ablaze.' },
+    { id: 'fireball',  name: 'Fireball',  icon: '🔥', kind: 'nuke', cat: 'magic', base: 11, per: 5, cd: 3500, status: [{ type: 'burn', mag: 4, duration: 4000 }], blurb: 'Hurl a fireball that sets the target ablaze.' },
     { id: 'frostnova', name: 'Frost Nova',icon: '❄️', kind: 'aoe',  cat: 'magic', base: 7, per: 4, radius: 5.0, cd: 7000, status: [{ type: 'slow', mag: 0.5, duration: 3000 }, { type: 'stun', duration: 800 }], blurb: 'Freezing blast: slows everything and briefly stuns monsters.' },
     { id: 'heal',      name: 'Heal',      icon: '✨', kind: 'heal', base: 8, per: 4, cd: 10000, blurb: 'Restore your own health.' },
   ],
   artisan: [
-    { id: 'bomb',      name: 'Bomb',      icon: '🧨', kind: 'aoe',  cat: 'melee', base: 9, per: 4, radius: 4.0, cd: 7000, status: [{ type: 'burn', mag: 4, duration: 3500 }], blurb: 'Throw a bomb that scorches the area.' },
+    { id: 'bomb',      name: 'Bomb',      icon: '🧨', kind: 'aoe',  cat: 'melee', base: 9, per: 4, radius: 4.0, throw: 16, cd: 7000, status: [{ type: 'burn', mag: 4, duration: 3500 }], blurb: 'Throw a bomb at a spot that scorches the area.' },
     { id: 'repair',    name: 'Repair',    icon: '🔧', kind: 'heal', base: 7, per: 3, cd: 9000, blurb: 'Patch yourself up.' },
     { id: 'fortify',   name: 'Fortify',   icon: '🛡️', kind: 'buff', buffStat: 'def', base: 3, per: 2, duration: 8000, cd: 14000, blurb: 'Brace for heavy bonus defence.' },
   ],
@@ -135,7 +138,7 @@ const classMult = (p, cat) => (CLASSES[normalizeProgress(p).class].mult[cat] ?? 
 export function maxHealth(p) { return 20 + A(p, 'vit') * 4; }            // 20..100
 export function meleeMult(p) { return classMult(p, 'melee') * (1 + A(p, 'str') * 0.06); }
 export function rangedMult(p) { return classMult(p, 'ranged') * (1 + A(p, 'dex') * 0.06); }
-export function magicMult(p) { return classMult(p, 'magic') * (1 + A(p, 'int') * 0.08); }
+export function magicMult(p) { return classMult(p, 'magic') * (1 + A(p, 'int') * 0.06); }
 export function damageMult(p, category) {
   if (category === 'ranged') return rangedMult(p);
   if (category === 'magic') return magicMult(p);
@@ -145,8 +148,8 @@ export function damageMult(p, category) {
 // magic with Intelligence, so investing the right attribute extends your range
 // (melee is unchanged). Base range is the limit; this grows it up to ~+90%.
 export function rangeMult(p, category) {
-  if (category === 'ranged') return 1 + A(p, 'dex') * 0.045;
-  if (category === 'magic') return 1 + A(p, 'int') * 0.045;
+  if (category === 'ranged') return 1 + A(p, 'dex') * 0.035;
+  if (category === 'magic') return 1 + A(p, 'int') * 0.035;
   return 1;
 }
 export function defenseBonus(p) { return A(p, 'end') * 0.5; }            // adds to armour defence

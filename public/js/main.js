@@ -506,19 +506,44 @@ function useSkillSlot(slot) {
   const now = performance.now();
   if (now < (skillReady[sk.id] || 0)) return; // on cooldown
   skillReady[sk.id] = now + sk.cd * tuning.skillCdMult;
-  // Single-target skills (nukes) need a target id for the server.
-  let target = null, tt = null;
+  // Single-target skills (nukes) need a target id; thrown AoE skills need an
+  // aimed landing point so the blast lands where you look, not at your feet.
+  let target = null, tt = null, aim = null;
   if (sk.kind === 'nuke') {
     const t = findTarget({ reach: 36 * tuning.skillRangeMult, type: 'ranged', cat: sk.cat });
     if (t) { target = t.id; tt = t.kind; }
     castSkillEffect(sk, lvl, t);
+  } else if (sk.kind === 'aoe' && sk.throw) {
+    const land = throwLandingPoint(sk.throw * tuning.skillRangeMult, sk.cat);
+    aim = { x: land.x, y: land.y, z: land.z };
+    castSkillEffect(sk, lvl, { point: land });
   } else {
     castSkillEffect(sk, lvl, null);
   }
   ownSwing = 1;
   audio.play(sk.kind === 'heal' ? 'heal' : sk.kind === 'buff' ? 'skillBuff'
     : sk.cat === 'magic' ? 'skillMagic' : sk.cat === 'ranged' ? 'skillRanged' : 'skillMelee');
-  net.sendSkill(slot, target, tt);
+  net.sendSkill(slot, target, tt, aim);
+}
+
+// Where a thrown AoE skill should land: an enemy under the crosshair if there is
+// one, otherwise the block being aimed at, otherwise a point at max range. The
+// result is clamped to `maxR` so you can never throw further than the skill allows.
+function throwLandingPoint(maxR, cat) {
+  player.syncCamera();
+  const eye = camera.position.clone();
+  const dir = aimDirection();
+  let point;
+  const t = findTarget({ reach: maxR, type: 'ranged', cat });
+  if (t && t.point) point = t.point.clone();
+  else {
+    const r = player.raycast();
+    point = r ? new THREE.Vector3(r.hit.x + 0.5, r.hit.y + 0.5, r.hit.z + 0.5)
+              : eye.clone().addScaledVector(dir, maxR);
+  }
+  const off = point.clone().sub(eye);
+  if (off.length() > maxR) point = eye.clone().addScaledVector(off.normalize(), maxR);
+  return point;
 }
 
 function skillColor(sk) {
@@ -802,20 +827,22 @@ function castSkillEffect(sk, lvl, target) {
   const rad = (sk.radius || 4) + lvl * 0.4;
   const from = camera.position.clone().addScaledVector(aimDirection(), 0.8);
   const dir = (target && target.point) ? target.point.clone().sub(from) : aimDirection();
+  // Thrown AoE skills land at the aimed point; other AoEs stay centred on you.
+  const land = (target && target.point) ? target.point.clone() : pos.clone();
   switch (sk.id) {
     case 'cleave': slashArc(pos, rad); break;
     case 'warcry': shockRings(pos, 0xffcf5a); guardAura(sk.duration || 6000); break;
     case 'charge': chargeTrail(sk.duration || 3000); spawnBurst(pos.clone().add(new THREE.Vector3(0, 0.4, 0)), 0xbfe3ff); break;
     case 'powershot': shootArrow(from, dir, { to: target && target.point ? target.point.clone() : null, maxDist: 36 * tuning.skillRangeMult, speed: 40, power: true }); break;
-    case 'volley': spawnFallingArrows(pos, rad); break;
+    case 'volley': spawnFallingArrows(land, rad); break;
     case 'dodge': dodgeBlur(sk.duration || 2500); break;
     case 'headshot': gunBeam(from, target && target.point ? target.point.clone() : from.clone().addScaledVector(dir, 30)); break;
-    case 'grenade': { const land = pos.clone().add(new THREE.Vector3(0, 0.2, 0)); lob(from, land, 0x3a3a3a, () => explosion(land, { core: 0xffb14d, big: true })); break; }
+    case 'grenade': { const at = land.clone().add(new THREE.Vector3(0, 0.2, 0)); lob(from, at, 0x3a3a3a, () => explosion(at, { core: 0xffb14d, big: true })); break; }
     case 'adrenaline': adrenalineAura(sk.duration || 6000); break;
     case 'fireball': shootProjectile(from, aimDirection(), 0xff7a2a, { to: target && target.point ? target.point.clone() : null, size: 0.45, maxDist: 30, speed: 15 }); break;
     case 'frostnova': iceNova(pos, rad); break;
     case 'heal': healColumn(pos); break;
-    case 'bomb': { const land = pos.clone().add(new THREE.Vector3(0, 0.2, 0)); lob(from, land, 0x222222, () => explosion(land, { core: 0xff7a2a, smoke: 0x333028, big: true })); break; }
+    case 'bomb': { const at = land.clone().add(new THREE.Vector3(0, 0.2, 0)); lob(from, at, 0x222222, () => explosion(at, { core: 0xff7a2a, smoke: 0x333028, big: true })); break; }
     case 'repair': repairSparks(pos); break;
     case 'fortify': hexShield(sk.duration || 8000); break;
     default:

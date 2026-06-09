@@ -9,12 +9,12 @@
 export const WEAPONS = {
   fist:    { name: 'Fists',   icon: '✊', type: 'melee',  cat: 'melee',  reach: 2.2, dmg: 1, mine: 1, craftable: false },
   sword:   { name: 'Sword',   icon: '⚔️', type: 'melee',  cat: 'melee',  reach: 3.0, dmg: 6, mine: 2, craftable: true },
-  axe:     { name: 'Axe',     icon: '🪓', type: 'melee',  cat: 'melee',  reach: 2.6, dmg: 4, mine: 4, craftable: true },
+  axe:     { name: 'Axe',     icon: '🪓', type: 'melee',  cat: 'melee',  reach: 2.6, dmg: 5, mine: 4, craftable: true },
   pickaxe: { name: 'Pickaxe', icon: '⛏️', type: 'melee',  cat: 'melee',  reach: 2.4, dmg: 2, mine: 5, craftable: true },
   spear:   { name: 'Spear',   icon: '🔱', type: 'melee',  cat: 'melee',  reach: 3.8, dmg: 5, mine: 2, craftable: true },
-  bow:     { name: 'Bow',     icon: '🏹', type: 'ranged', cat: 'ranged', reach: 26,  dmg: 5, mine: 1, craftable: true },
-  gun:     { name: 'Gun',     icon: '🔫', type: 'ranged', cat: 'ranged', reach: 34,  dmg: 9, mine: 1, craftable: true },
-  staff:   { name: 'Staff',   icon: '🪄', type: 'ranged', cat: 'magic',  reach: 22,  dmg: 6, mine: 1, craftable: true },
+  bow:     { name: 'Bow',     icon: '🏹', type: 'ranged', cat: 'ranged', reach: 22,  dmg: 5, mine: 1, craftable: true },
+  gun:     { name: 'Gun',     icon: '🔫', type: 'ranged', cat: 'ranged', reach: 24,  dmg: 6, mine: 1, craftable: true },
+  staff:   { name: 'Staff',   icon: '🪄', type: 'ranged', cat: 'magic',  reach: 20,  dmg: 6, mine: 1, craftable: true },
 };
 export const DMG_PER_LEVEL = 2;
 
