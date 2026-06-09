@@ -13,7 +13,7 @@ import { CharacterEditor } from './chareditor.js';
 import { Tutorial, tutorialSeen } from './tutorial.js';
 import { addAccent } from './detail.js';
 import { equippedWeapon, speedMultiplier, bodyArmorWeight, defaultEquipment, WEAPONS } from './gear.js';
-import { speedAttrMult, hungerMult, maxHealth, defaultProgress, classSkills, CLASSES } from './rpg.js';
+import { speedAttrMult, hungerMult, maxHealth, defaultProgress, classSkills, CLASSES, rangeMult } from './rpg.js';
 import { MOB_TYPES } from './mobs.js';
 import * as audio from './audio.js';
 
@@ -271,7 +271,9 @@ function setupNetwork() {
   net.on('levelup', (msg) => { ui.toast(`⭐ Level ${msg.level}!\n+2 attribute & +1 skill point — open 🎒 Bag`); audio.play('level'); });
   net.on('skillFx', (msg) => {
     const pos = new THREE.Vector3(msg.x, msg.y, msg.z);
-    if (msg.kind === 'aoe') spawnRing(pos, 4, 0xffaa55);
+    if (msg.skill === 'volley') spawnFallingArrows(pos, 4.5);             // archer rain of arrows
+    else if (msg.kind === 'aoe') spawnRing(pos, 4, 0xffaa55);
+    else if (msg.kind === 'buff') { spawnRing(pos, 1.6, 0xffe066); spawnBurst(pos.clone().add(new THREE.Vector3(0, 1, 0)), 0xffe066); }
     else spawnRing(pos.add(new THREE.Vector3(0, 1, 0)), 1.2, 0xffffff);
   });
   net.on('buff', (msg) => {
@@ -281,6 +283,7 @@ function setupNetwork() {
       clearTimeout(_buffTimer);
       _buffTimer = setTimeout(() => { myBuffSpeed = 1; recomputeDerived(); }, msg.duration);
       ui.toast(msg.value < 1 ? '🥶 Slowed!' : '💨 Speed boost!');
+      if (msg.value > 1) showSpeedAura(msg.duration); // surrounding aura while boosted
     }
   });
   net.on('respawn', (msg) => {
@@ -463,17 +466,22 @@ function useSkillSlot(slot) {
   if (sk.kind === 'nuke') {
     const t = findTarget({ reach: 36 * tuning.skillRangeMult, type: 'ranged', cat: sk.cat });
     if (t) target = t.id, tt = t.kind;
-    // Magic skills (fireball) launch a big glowing orb in the aim direction; it
-    // homes onto a target if there is one, else streaks off and fades.
     const from = camera.position.clone().addScaledVector(aimDirection(), 0.8);
+    const dir = (t && t.point) ? t.point.clone().sub(from) : aimDirection();
     if (sk.cat === 'magic') {
+      // Fireball: a big glowing orb that homes onto a target or fades.
       shootProjectile(from, aimDirection(), skillColor(sk),
         { to: t && t.point ? t.point.clone() : null, size: 0.45, maxDist: 30, speed: 15 });
+    } else if (sk.id === 'powershot') {
+      // Power Shot: a shiny, oversized arrow — clearly stronger than a normal shot.
+      shootArrow(from, dir, { to: t && t.point ? t.point.clone() : null, maxDist: 36 * tuning.skillRangeMult, speed: 40, power: true });
     } else if (t && t.point) {
       shootTracer(camera.position.clone(), t.point, skillColor(sk));
     }
   } else if (sk.kind === 'aoe') {
-    spawnRing(player.pos.clone(), (sk.radius || 4) + lvl * 0.4, skillColor(sk));
+    const rad = (sk.radius || 4) + lvl * 0.4;
+    if (sk.id === 'volley') spawnFallingArrows(player.pos.clone(), rad);   // archer: rain of arrows
+    else spawnRing(player.pos.clone(), rad, skillColor(sk));
   }
   ownSwing = 1;
   audio.play(sk.kind === 'heal' ? 'heal' : sk.kind === 'buff' ? 'skillBuff'
@@ -520,6 +528,61 @@ function spawnRing(pos, radius, color) {
     else { scene.remove(m); geo.dispose(); m.material.dispose(); }
   };
   grow();
+}
+
+// A volley of arrows raining down across the AoE radius (archer's Volley).
+function spawnFallingArrows(center, radius, color = 0xffcf66) {
+  if (!scene) return;
+  spawnRing(center.clone(), radius, color);
+  const n = Math.round(10 + radius * 2);
+  for (let i = 0; i < n; i++) {
+    setTimeout(() => {
+      if (!scene) return;
+      const ang = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * radius;
+      const x = center.x + Math.cos(ang) * rr, z = center.z + Math.sin(ang) * rr;
+      const top = new THREE.Vector3(x, center.y + 11 + Math.random() * 3, z);
+      const land = new THREE.Vector3(x, center.y + 0.15, z);
+      shootArrow(top, new THREE.Vector3(0, -1, 0), { to: land, maxDist: 16, speed: 26 + Math.random() * 8, color });
+    }, i * 45);
+  }
+}
+
+// Golden speed aura that follows the player while a speed buff is active.
+let speedAura = null, speedAuraUntil = 0;
+function showSpeedAura(durationMs) {
+  if (!scene) return;
+  speedAuraUntil = performance.now() + durationMs;
+  if (!speedAura) {
+    speedAura = new THREE.Group();
+    for (const r of [0.55, 0.8]) {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(r, r + 0.08, 28),
+        new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.7, side: THREE.DoubleSide }));
+      ring.rotation.x = -Math.PI / 2; ring.userData.r = r; speedAura.add(ring);
+    }
+    for (let i = 0; i < 6; i++) { // upward speed streaks
+      const s = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.5, 0.04),
+        new THREE.MeshBasicMaterial({ color: 0xfff0a0, transparent: true, opacity: 0.6 }));
+      s.userData.a = (i / 6) * Math.PI * 2; speedAura.add(s);
+    }
+    scene.add(speedAura);
+  }
+  speedAura.visible = true;
+}
+function updateSpeedAura(now) {
+  if (!speedAura) return;
+  if (now > speedAuraUntil) { speedAura.visible = false; return; }
+  if (!player) return;
+  speedAura.visible = true;
+  speedAura.position.set(player.pos.x, player.pos.y + 0.08, player.pos.z);
+  speedAura.rotation.y = now / 400;
+  const pulse = 1 + Math.sin(now / 120) * 0.08;
+  for (const c of speedAura.children) {
+    if (c.userData.r != null) c.scale.setScalar(pulse);
+    else { // streaks circle and bob upward
+      const a = c.userData.a + now / 300;
+      c.position.set(Math.cos(a) * 0.7, 0.3 + ((now / 400 + c.userData.a) % 1) * 0.8, Math.sin(a) * 0.7);
+    }
+  }
 }
 
 // ---------------------------------------------------------------- third-person
@@ -956,10 +1019,11 @@ function blockStageFrac(hit) {
   return st === undefined ? 0 : (st + 1) / 8;
 }
 
-// Fire a visible shot at a block point (gun tracer / wand orb).
+// Fire a visible shot at a block point (bow arrow / gun tracer / wand orb).
 function shootAtBlock(w, point) {
   const from = camera.position.clone().addScaledVector(aimDirection(), 0.8);
   if (w.cat === 'magic') shootProjectile(from, aimDirection(), 0xc98bff, { to: point.clone(), size: 0.3, maxDist: 24, speed: 22 });
+  else if (w.id === 'bow') shootArrow(from, point.clone().sub(from), { to: point.clone(), maxDist: 28, speed: 34 });
   else shootTracer(camera.position.clone(), point, 0xffee88);
 }
 
@@ -998,11 +1062,14 @@ function primaryDown() {
     const target = aim.target;
     net.sendAttack(target.id, w.id, target.kind);
     audio.play(w.cat === 'magic' ? 'skillMagic' : w.cat === 'ranged' ? 'skillRanged' : 'hit');
+    const from = camera.position.clone().addScaledVector(aimDirection(), 0.8);
     if (w.cat === 'magic') {
-      const from = camera.position.clone().addScaledVector(aimDirection(), 0.8);
       shootProjectile(from, aimDirection(), 0xc98bff, { to: target.point.clone(), size: 0.3, maxDist: 24, speed: 18 });
+    } else if (w.id === 'bow') {
+      // A real arrow that flies to the target at a visible speed.
+      shootArrow(from, target.point.clone().sub(from), { to: target.point.clone(), maxDist: w.reach * rangeMult(myProgress, w.cat), speed: 34 });
     } else if (w.cat === 'ranged') {
-      shootTracer(camera.position.clone(), target.point, 0xffee88);
+      shootTracer(camera.position.clone(), target.point, 0xffee88); // gun: fast bullet streak
     }
     return;
   }
@@ -1087,8 +1154,10 @@ function updateMining(dt) {
 function throwShot(w) {
   const dir = aimDirection();
   const from = camera.position.clone().addScaledVector(dir, 0.8);
-  if (w.cat === 'magic') shootProjectile(from, dir, 0xc98bff, { size: 0.3, maxDist: w.reach, speed: 22 });
-  else shootTracer(camera.position.clone(), camera.position.clone().addScaledVector(dir, w.reach), 0xffee88);
+  const range = w.reach * rangeMult(myProgress, w.cat);
+  if (w.cat === 'magic') shootProjectile(from, dir, 0xc98bff, { size: 0.3, maxDist: range, speed: 22 });
+  else if (w.id === 'bow') shootArrow(from, dir, { maxDist: range, speed: 34 }); // flies out and drops at max range
+  else shootTracer(camera.position.clone(), camera.position.clone().addScaledVector(dir, range), 0xffee88);
 }
 
 // Render a persistent crack overlay on EVERY damaged block, so the cracks stay
@@ -1158,7 +1227,8 @@ const _fwd = new THREE.Vector3();
 // Best target (player or mob) in the crosshair within reach. Returns
 // { id, kind, point } or null. Ranged/magic need tighter aim than melee.
 function findTarget(w) {
-  const reach = w.reach;
+  // Ranged/magic range extends with the relevant attribute (Dex/Int).
+  const reach = w.reach * rangeMult(myProgress, w.cat);
   const minDot = w.type === 'ranged' ? 0.985 : 0.86;
   camera.getWorldDirection(_fwd);
   let best = null, bestDist = Infinity;
@@ -1254,6 +1324,66 @@ function shootProjectile(from, dir, color, { to = null, maxDist = 26, speed = 16
     glow.geometry.dispose(); glow.material.dispose();
   };
   requestAnimationFrame(step);
+}
+
+// A real arrow that flies from `from` along `dir` at a visible speed and sticks
+// where it lands (or fades at maxDist). `power` makes it bigger + glowing for
+// the archer's Power Shot. Returns nothing.
+const _zAxis = new THREE.Vector3(0, 0, 1);
+function shootArrow(from, dir, { to = null, maxDist = 26, speed = 34, power = false, color = 0xe9d8a6 } = {}) {
+  if (!scene) return;
+  const d = dir.clone().normalize();
+  const g = new THREE.Group();
+  const sh = power ? 1.4 : 1;
+  const mat = (c, o) => new THREE.MeshBasicMaterial({ color: c, transparent: o != null, opacity: o == null ? 1 : o });
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.035 * sh, 0.035 * sh, 0.7 * sh), mat(0x6b4f2a));
+  g.add(shaft);
+  const tip = new THREE.Mesh(new THREE.BoxGeometry(0.07 * sh, 0.07 * sh, 0.16 * sh), mat(power ? 0xfff0a0 : 0xcfd6df));
+  tip.position.z = 0.42 * sh; g.add(tip);
+  for (const s of [-1, 1]) { // fletching
+    const f = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.12 * sh, 0.12 * sh), mat(power ? 0xffd34d : 0xdedede));
+    f.position.set(s * 0.05 * sh, 0, -0.34 * sh); g.add(f);
+  }
+  if (power) { // radiant aura around a power shot
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 12), mat(0xffe066, 0.5));
+    g.add(glow);
+  }
+  g.quaternion.setFromUnitVectors(_zAxis, d);
+  g.position.copy(from);
+  scene.add(g);
+  let travelled = 0, lastT = performance.now();
+  const step = () => {
+    const now = performance.now(); const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+    const adv = speed * dt; travelled += adv; g.position.addScaledVector(d, adv);
+    if (power && Math.random() < 0.7) spawnSpark(g.position, 0xffe066); // glittering trail
+    if (to && g.position.distanceTo(to) < 0.9) {
+      spawnRing(to.clone(), power ? 2.0 : 1.0, power ? 0xffe066 : color);
+      if (power) spawnBurst(to.clone(), 0xffe066);
+      scene.remove(g); disposeGroup(g); return;
+    }
+    if (travelled >= maxDist) { fadeOutGroup(g); return; } // out of range: drop/fade
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// Tiny fading spark (used for power-shot trail / bursts).
+function spawnSpark(pos, color) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 }));
+  m.position.copy(pos);
+  scene.add(m);
+  let t = 0;
+  const tick = () => { t += 0.05; m.material.opacity = 0.9 * (1 - t / 0.4); m.scale.multiplyScalar(0.92);
+    if (t < 0.4) requestAnimationFrame(tick); else { scene.remove(m); m.geometry.dispose(); m.material.dispose(); } };
+  requestAnimationFrame(tick);
+}
+function spawnBurst(pos, color) { for (let i = 0; i < 8; i++) spawnSpark(pos.clone().add(new THREE.Vector3((Math.random() - 0.5), Math.random() * 0.6, (Math.random() - 0.5))), color); }
+function fadeOutGroup(g) {
+  let t = 0;
+  const tick = () => { t += 0.05; g.traverse((o) => { if (o.material) { o.material.transparent = true; o.material.opacity = 1 - t / 0.3; } });
+    if (t < 0.3) requestAnimationFrame(tick); else { scene.remove(g); disposeGroup(g); } };
+  requestAnimationFrame(tick);
 }
 
 // World-space aim direction from the camera (the way the player is pointing).
@@ -1779,6 +1909,7 @@ function loop(now) {
   updateViewModel(dt);
   updateSkillBar(now);
   updateSprintUI();
+  updateSpeedAura(now);
   updateFloats(dt);
   minimap.draw(player, remotePlayers, mobEntities);
 

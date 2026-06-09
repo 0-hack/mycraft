@@ -141,6 +141,14 @@ export function damageMult(p, category) {
   if (category === 'magic') return magicMult(p);
   return meleeMult(p);
 }
+// Effective weapon range multiplier. Ranged shots reach further with Dexterity,
+// magic with Intelligence, so investing the right attribute extends your range
+// (melee is unchanged). Base range is the limit; this grows it up to ~+90%.
+export function rangeMult(p, category) {
+  if (category === 'ranged') return 1 + A(p, 'dex') * 0.045;
+  if (category === 'magic') return 1 + A(p, 'int') * 0.045;
+  return 1;
+}
 export function defenseBonus(p) { return A(p, 'end') * 0.5; }            // adds to armour defence
 export function attackCooldownMult(p) { return Math.max(0.45, 1 - A(p, 'dex') * 0.03); }
 export const CRIT_MULT = 1.8;

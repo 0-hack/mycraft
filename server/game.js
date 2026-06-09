@@ -16,7 +16,7 @@ import {
 import {
   defaultProgress, normalizeProgress, addXp, maxHealth, damageMult,
   defenseBonus, attackCooldownMult, craftDiscount, nextXp, ATTRS, ATTR_CAP, CLASSES,
-  classSkills, SKILL_CAP, critChance, CRIT_MULT, miningMult,
+  classSkills, SKILL_CAP, critChance, CRIT_MULT, miningMult, rangeMult,
 } from '../public/js/rpg.js';
 import { MOB_TYPES, MOB_DROPS, pickMobType } from '../public/js/mobs.js';
 
@@ -318,11 +318,12 @@ export function attachGame(server) {
           const base = w.dmg * damageMult(prog, w.cat) * buffMult(ctx, 'dmg', 1);
           const rolled = critize(prog, base);
           const eyeY = s.y + 1.6; // shooter's eye
+          const reach = w.reach * rangeMult(prog, w.cat); // ranged/magic range grows with dex/int
           if (msg.targetType === 'mob') {
             const m = mobs.get(msg.target);
             if (!m) break;
             if (Math.abs(m.y - s.y) > VERT_LIMIT) break; // can't hit across a big height gap
-            if (Math.hypot(m.x - s.x, m.y - s.y, m.z - s.z) > w.reach + REACH_SLACK) break;
+            if (Math.hypot(m.x - s.x, m.y - s.y, m.z - s.z) > reach + REACH_SLACK) break;
             const mh = (MOB_TYPES[m.type] || MOB_TYPES.slime).height;
             if (losBlocked(s.x, eyeY, s.z, m.x, m.y + mh * 0.6, m.z)) break; // no hitting through walls
             hurtMob(m, Math.round(rolled.dmg), ctx, rolled.crit ? 'crit' : 'hit');
@@ -334,7 +335,7 @@ export function attachGame(server) {
           const ts = target.state;
           if (Math.abs(ts.y - s.y) > VERT_LIMIT) break; // only same-level players can be hit
           const dist = Math.hypot(ts.x - s.x, ts.y - s.y, ts.z - s.z);
-          if (dist > w.reach + REACH_SLACK) break;
+          if (dist > reach + REACH_SLACK) break;
           if (losBlocked(s.x, eyeY, s.z, ts.x, ts.y + 1.0, ts.z)) break; // no hitting through walls
           const def = defenseOf(safeParse(ts.equipment, null)) + defenseBonus(safeParse(ts.progress, null)) + buffMult(target, 'def', 0);
           applyDamage(target, mitigate(rolled.dmg, def), ctx, 'combat', rolled.crit ? 'crit' : undefined);
@@ -986,6 +987,7 @@ export function attachGame(server) {
             for (const c of players) {
               if (c.dead) continue;
               if (Math.hypot(c.state.x - tl.x, c.state.z - tl.z) > tl.radius) continue;
+              if (Math.abs(c.state.y - tl.y) > VERT_LIMIT) continue; // safe if hiding underground / well above
               const d = defenseOf(safeParse(c.state.equipment, null)) + defenseBonus(safeParse(c.state.progress, null)) + buffMult(c, 'def', 0);
               applyDamage(c, mitigate(tl.dmg, d), null, 'the ' + def.name + "'s slam");
             }
@@ -996,7 +998,9 @@ export function attachGame(server) {
           }
         } else if (now - (m.lastSlam || 0) > 6000) {        // start a new slam
           const radius = 5.5;
-          m.tele = { x: tgt.state.x, y: tgt.state.y, z: tgt.state.z, radius, until: now + 1500, dmg: def.dmg * 2.5 * cfg.mobPower };
+          // The slam lands at the boss's (surface) level, so players who dig
+          // underground drop below it and are safe (vertical check on detonate).
+          m.tele = { x: tgt.state.x, y: m.y, z: tgt.state.z, radius, until: now + 1500, dmg: def.dmg * 2.5 * cfg.mobPower };
           m.lastSlam = now;
           broadcast({ type: 'bossTelegraph', x: m.tele.x, y: m.tele.y, z: m.tele.z, radius, duration: 1500 });
         }
