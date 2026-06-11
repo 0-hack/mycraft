@@ -16,6 +16,8 @@ const FLY_CLIMB = 8.5;     // extra lift while holding the jump/fly control
 const REACH = 6;
 const SPRINT_DRAIN = 5;   // seconds of sprint to fully deplete stamina
 const SPRINT_REFILL = 7;  // seconds to fully refill
+const DASH_SPEED = 17;    // horizontal speed during a dodge dash (blocks/sec)
+const DASH_TIME = 0.22;   // how long the dash lasts (~3.7 blocks of travel)
 
 export class Player {
   constructor(camera, world, spawn) {
@@ -27,6 +29,8 @@ export class Player {
     this.pitch = 0;
     this.onGround = false;
     this.inWater = false;
+    this.dashT = 0;       // remaining dodge-dash time
+    this.dashVX = 0; this.dashVZ = 0;
     this.health = 20;
     this.hunger = 20;
     this.dead = false;
@@ -49,6 +53,16 @@ export class Player {
     // still detected here and reported through this hook; regen/heals come from
     // the server via setHealth().
     this.onDamage = null;
+  }
+
+  // Begin a quick dodge dash in world direction (dx,dz). Collision still applies,
+  // so you can't dash through walls.
+  startDash(dx, dz) {
+    const len = Math.hypot(dx, dz);
+    if (len < 0.001) return;
+    this.dashT = DASH_TIME;
+    this.dashVX = (dx / len) * DASH_SPEED;
+    this.dashVZ = (dz / len) * DASH_SPEED;
   }
 
   look(dx, dy) {
@@ -131,6 +145,13 @@ export class Player {
       if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed);
       this.vel.x = move.x;
       this.vel.z = move.z;
+
+      // A dodge dash overrides normal horizontal movement for its short window.
+      if (this.dashT > 0) {
+        this.dashT = Math.max(0, this.dashT - dt);
+        this.vel.x = this.dashVX;
+        this.vel.z = this.dashVZ;
+      }
 
       // Gravity / buoyancy.
       if (this.inWater) {

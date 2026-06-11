@@ -94,11 +94,20 @@ export function setupMobileControls(player, ui, actions) {
     player.look((t.clientX - lookLast.x) * s, (t.clientY - lookLast.y) * s);
     lookLast = { x: t.clientX, y: t.clientY };
   }
+  let lastTap = 0;
   function endLook() {
-    // A short tap that didn't drag = jump.
-    if (!lookStart.moved && performance.now() - lookStart.t < 250) {
-      player.input.jump = true;
-      setTimeout(() => { player.input.jump = false; }, 140);
+    // A short tap that didn't drag = jump; two such taps in quick succession =
+    // a dodge (in the joystick direction) — the second tap dodges instead of jumping.
+    const now = performance.now();
+    if (!lookStart.moved && now - lookStart.t < 250) {
+      if (now - lastTap < 300) {
+        lastTap = 0;
+        if (actions.onDodge) actions.onDodge();
+      } else {
+        lastTap = now;
+        player.input.jump = true;
+        setTimeout(() => { player.input.jump = false; }, 140);
+      }
     }
     lookId = null;
   }

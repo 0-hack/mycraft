@@ -89,6 +89,7 @@ function fillSettings(s) {
   $('s-skillDmg').value = s.skillDmgMult;
   $('s-skillRange').value = s.skillRangeMult;
   $('s-skillCd').value = s.skillCdMult;
+  $('s-dodgeCd').value = (s.dodgeCdMs ?? 1000) / 1000; // shown in seconds
   settingsDirty = false; // inputs now mirror the server's authoritative values
 }
 
@@ -124,6 +125,7 @@ $('s-save2').onclick = async () => {
     skillDmgMult: Number($('s-skillDmg').value),
     skillRangeMult: Number($('s-skillRange').value),
     skillCdMult: Number($('s-skillCd').value),
+    dodgeCdMs: Math.round(Number($('s-dodgeCd').value) * 1000),
   };
   const res = await api('/api/admin/settings', { method: 'POST', body: JSON.stringify({ settings }) });
   if (res.settings) { fillSettings(res.settings); msg('tuning-msg', 'Saved ✓ — applied live to players.', true); }

@@ -31,6 +31,7 @@ const DEFAULTS = {
   skillDmgMult: 1,               // global skill damage multiplier
   skillRangeMult: 1,             // global skill range/radius multiplier
   skillCdMult: 1,                // global skill cooldown multiplier
+  dodgeCdMs: 1000,               // melee dodge/dash cooldown in milliseconds
 };
 
 // Per-difficulty presets applied to spawn rate + economy when difficulty changes.
@@ -45,7 +46,7 @@ const NUMERIC = new Set([
   'sellMultiplier', 'dropLifetimeMs', 'inactiveDays',
   'mobEnabled', 'mobCap', 'mobPerPlayer', 'mobIntervalMs', 'mobPower', 'chatMinIntervalMs', 'wingsForAll', 'brickCap',
   'spawnProtectSec', 'hungerDrainMult', 'staminaDrainSec', 'staminaRefillSec',
-  'moveSpeedMult', 'skillDmgMult', 'skillRangeMult', 'skillCdMult',
+  'moveSpeedMult', 'skillDmgMult', 'skillRangeMult', 'skillCdMult', 'dodgeCdMs',
 ]);
 
 // The subset of settings the client needs to apply locally (move/hunger/stamina/skills).
@@ -57,6 +58,7 @@ export function clientTuning() {
     staminaRefillSec: settings.staminaRefillSec,
     skillRangeMult: settings.skillRangeMult,
     skillCdMult: settings.skillCdMult,
+    dodgeCdMs: settings.dodgeCdMs,
   };
 }
 

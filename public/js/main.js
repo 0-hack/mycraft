@@ -27,7 +27,7 @@ let myAppearance = null;
 let myEquipment = defaultEquipment();
 let myProgress = defaultProgress('soldier');
 // Admin-tunable knobs pushed by the server (balanced defaults).
-let tuning = { moveSpeedMult: 1, hungerDrainMult: 1, staminaDrainSec: 5, staminaRefillSec: 7, skillRangeMult: 1, skillCdMult: 1 };
+let tuning = { moveSpeedMult: 1, hungerDrainMult: 1, staminaDrainSec: 5, staminaRefillSec: 7, skillRangeMult: 1, skillCdMult: 1, dodgeCdMs: 1000 };
 function applyTuning(t) {
   if (!t) return;
   tuning = { ...tuning, ...t };
@@ -1201,7 +1201,7 @@ function setupInput() {
   if (isTouchDevice()) {
     setupMobileControls(player, ui, {
       onPrimaryDown: primaryDown, onPrimaryUp: primaryUp, onPlace: placeBlock, onView: toggleView,
-      onToggleFly: toggleFlight, onToggleLock: toggleLock,
+      onToggleFly: toggleFlight, onToggleLock: toggleLock, onDodge: tryDodge,
     });
   }
   setupDesktopControls();
@@ -1266,7 +1266,8 @@ function setupDesktopControls() {
   canvas.addEventListener('mousedown', (e) => {
     if (document.pointerLockElement !== canvas) return;
     if (e.button === 0) primaryDown();
-    else if (e.button === 2) placeBlock();
+    // Right-click: build when a block is selected, otherwise dodge (melee).
+    else if (e.button === 2) { if (ui.selectedBlock() != null) placeBlock(); else tryDodge(); }
   });
   addEventListener('mouseup', (e) => { if (e.button === 0) primaryUp(); });
   document.addEventListener('pointerlockchange', () => {
@@ -1655,6 +1656,44 @@ function updateLockOn() {
   player.yaw = Math.atan2(-dx, -dz);
   const lim = Math.PI / 2 - 0.01;
   player.pitch = Math.max(-lim, Math.min(lim, Math.atan2(dy, horiz)));
+}
+
+// ---- melee dodge / dash --------------------------------------------------
+// A quick evasive shift (boxer-style) in the movement-input direction. Melee
+// only, with an admin-tunable cooldown. The dash is positional, so it carries
+// you out of a monster's swing range — repositioning IS the dodge.
+let dodgeReady = 0;
+function tryDodge() {
+  if (!player || player.dead) return;
+  if (equippedWeapon(myEquipment).cat !== 'melee') return; // melee weapon only
+  const now = performance.now();
+  if (now < dodgeReady) return;                            // on cooldown
+  dodgeReady = now + (tuning.dodgeCdMs || 1000);
+  // Direction from the joystick / WASD; with no input, lean straight back.
+  const fwd = player.forwardDir();
+  const rx = -fwd.z, rz = fwd.x;
+  const f = player.input.forward, s = player.input.strafe;
+  let dx, dz;
+  if (Math.abs(f) > 0.05 || Math.abs(s) > 0.05) { dx = fwd.x * f + rx * s; dz = fwd.z * f + rz * s; }
+  else { dx = -fwd.x; dz = -fwd.z; }
+  player.startDash(dx, dz);
+  ownSwing = 1;
+  audio.play('swing');
+  dodgeBlur(260);   // quick green motion rings on the avatar
+  dodgeFx();        // first-person whoosh (brief FOV punch)
+}
+function dodgeFx() {
+  if (!camera) return;
+  let t = 0;
+  const tick = () => {
+    t += 0.016;
+    const k = Math.max(0, 1 - t / 0.26);
+    camera.fov = 70 + 9 * k;
+    camera.updateProjectionMatrix();
+    if (t < 0.26) requestAnimationFrame(tick);
+    else { camera.fov = 70; camera.updateProjectionMatrix(); }
+  };
+  requestAnimationFrame(tick);
 }
 
 // Is the straight line from `from` to (tx,ty,tz) blocked by a solid block before
