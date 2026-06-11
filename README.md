@@ -64,7 +64,7 @@ no installs, no plugins. Just open a URL.
   power are difficulty-driven and admin-tunable.
 - ✨ **Class skills & status effects** — each class has **3 unique active skills**
   (e.g. Mage's Fireball/Frost Nova/Heal, Soldier's Cleave/War Cry/Charge) on a
-  hotbar (keys Z/X/C or on-screen buttons with cooldowns). Learn/upgrade them
+  hotbar (keys Q/E/R or on-screen buttons with cooldowns). Learn/upgrade them
   with skill points earned every level, capped at 5. Skills apply **status
   effects** — Fireball/Power Shot/Bomb **burn** (damage over time), Frost Nova &
   Cleave **slow**, Frost Nova & Grenade **stun** monsters — plus timed
@@ -165,11 +165,12 @@ from there.
 | Jump / swim up       | `Space`                        | ⤴ button                        |
 | Sprint               | `Shift`                        | —                               |
 | Break block / attack | Left click                     | ⛏ button                        |
-| Place block          | Right click                    | 🧱 button                       |
+| Place block          | Right click (block selected)   | 🧱 button                       |
+| Dodge dash           | Right click (weapon in hand)   | 💨 button                       |
 | Select block         | `1`–`9` / scroll wheel         | Tap a hotbar slot               |
 | Swap weapon / axe    | `1` (tap slot 1 again)         | Tap slot 1 again                |
-| Class skills         | `Z` `X` `C`                    | Skill buttons by ⛏              |
-| Use healing patch    | `Q`                            | 🩹 button                       |
+| Class skills         | `Q` `E` `R`                    | Skill buttons by ⛏              |
+| Use healing patch    | `C`                            | 🩹 button                       |
 | Eat food             | `F`                            | 🍗 button                       |
 | Fly (if granted)     | Hold `Space`                   | Hold 🪽 button                  |
 | Toggle view          | `V`                            | 👁 button                       |

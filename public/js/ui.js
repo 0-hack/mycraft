@@ -265,7 +265,7 @@ export class UI {
       const lvl = (p.skills && p.skills[sk.id]) || 0;
       const row = document.createElement('div');
       row.className = 'gear-row';
-      const keyHint = ['Z', 'X', 'C'][slot];
+      const keyHint = ['Q', 'E', 'R'][slot];
       row.innerHTML = `<span>${sk.icon} <b>${sk.name}</b> <small>Lv ${lvl}/${SKILL_CAP} · key ${keyHint}</small>` +
         `<br><small style="color:#8aa0c6">${sk.blurb || ''}</small></span>`;
       const b = document.createElement('button');

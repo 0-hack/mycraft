@@ -495,7 +495,7 @@ function buildSkillBar() {
     const lvl = (myProgress.skills && myProgress.skills[sk.id]) || 0;
     const el = document.createElement('div');
     el.className = 'skill' + (lvl === 0 ? ' locked' : '');
-    el.innerHTML = `<span class="sk-ico">${sk.icon}</span><span class="sk-key">${['Z', 'X', 'C'][slot]}</span>` +
+    el.innerHTML = `<span class="sk-ico">${sk.icon}</span><span class="sk-key">${['Q', 'E', 'R'][slot]}</span>` +
       `<span class="sk-lvl">${lvl ? 'L' + lvl : '🔒'}</span><div class="sk-cd"></div>`;
     const use = (e) => { e.preventDefault(); useSkillSlot(slot); };
     el.addEventListener('pointerdown', use);
@@ -1289,12 +1289,13 @@ function setupDesktopControls() {
     if (e.code === 'KeyV' && !chatOpen && !ui.anyMenuOpen()) { toggleView(); return; }
     if (e.code === 'KeyM' && !chatOpen) { toggleSound(); return; }
     if (e.code === 'KeyG' && !chatOpen && !ui.anyMenuOpen()) { toggleFlight(); return; } // wings on/off
-    if (e.code === 'KeyQ' && !chatOpen && !ui.anyMenuOpen()) { net.sendUseConsumable('medkit'); return; }
+    if (e.code === 'KeyC' && !chatOpen && !ui.anyMenuOpen()) { net.sendUseConsumable('medkit'); return; }
     if (e.code === 'KeyF' && !chatOpen && !ui.anyMenuOpen()) { net.sendUseConsumable('food'); return; }
     if (chatOpen || ui.anyMenuOpen()) return;
-    if (e.code === 'KeyZ') { useSkillSlot(0); return; }
-    if (e.code === 'KeyX') { useSkillSlot(1); return; }
-    if (e.code === 'KeyC') { useSkillSlot(2); return; }
+    // Class skills on Q/E/R — within easy reach of the WASD hand.
+    if (e.code === 'KeyQ') { useSkillSlot(0); return; }
+    if (e.code === 'KeyE') { useSkillSlot(1); return; }
+    if (e.code === 'KeyR') { useSkillSlot(2); return; }
     keys[e.code] = true;
     updateKeyInput(keys);
     if (e.code === 'Space') player.input.jump = true;
@@ -1658,17 +1659,17 @@ function updateLockOn() {
   player.pitch = Math.max(-lim, Math.min(lim, Math.atan2(dy, horiz)));
 }
 
-// ---- melee dodge / dash --------------------------------------------------
-// A quick evasive shift (boxer-style) in the movement-input direction. Melee
-// only, with an admin-tunable cooldown. The dash is positional, so it carries
-// you out of a monster's swing range — repositioning IS the dodge.
+// ---- dodge / dash --------------------------------------------------------
+// A quick evasive shift (boxer-style) in the movement-input direction, available
+// to every player on an admin-tunable cooldown. The dash repositions you and the
+// server grants brief i-frames, so it reliably evades an incoming hit.
 let dodgeReady = 0;
 function tryDodge() {
   if (!player || player.dead) return;
-  if (equippedWeapon(myEquipment).cat !== 'melee') return; // melee weapon only
   const now = performance.now();
   if (now < dodgeReady) return;                            // on cooldown
   dodgeReady = now + (tuning.dodgeCdMs || 1000);
+  clearLock(); // a dodge is a disengage — drop any target lock so it doesn't fight the dash
   // Direction from the joystick / WASD; with no input, lean straight back.
   const fwd = player.forwardDir();
   const rx = -fwd.z, rz = fwd.x;

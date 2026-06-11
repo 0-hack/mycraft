@@ -38,9 +38,10 @@ const KILL_SCORE = 50;
 // more slamming players from across the map.
 const BOSS_SLAM_RANGE = 8;
 const WATER_BLOCK = 9; // block id for water (matches worldgen/blocks B.WATER)
-// A melee dodge grants this many ms of invulnerability to attacks (the dash
-// itself also repositions you). Environmental/DoT damage still applies.
-const DODGE_IFRAMES = 350;
+// A dodge grants this many ms of invulnerability to attacks (covers the dash
+// plus a buffer for latency, so no hit lands mid-dodge). Environmental/DoT
+// damage still applies.
+const DODGE_IFRAMES = 450;
 const UNDODGEABLE = new Set(['void', 'fall', 'starve', 'burning']);
 // You can only be attacked by something on roughly your own level: fly/climb
 // above this many blocks and grounded monsters/players can't reach you. Ground
@@ -846,12 +847,10 @@ export function attachGame(server) {
     }
   }
 
-  // A melee dodge: brief i-frames so the dash actually evades the hit. Server
-  // validates the weapon and re-checks the cooldown so it can't be spammed.
+  // A dodge: brief i-frames so the dash actually evades the hit. Available to all
+  // players; the server re-checks the cooldown so it can't be spammed.
   function handleDodge(ctx) {
     if (ctx.dead) return;
-    const w = equippedWeapon(safeParse(ctx.state.equipment, null));
-    if (w.cat !== 'melee') return;
     const now = Date.now();
     if (now - (ctx.lastDodge || 0) < getSettings().dodgeCdMs) return;
     ctx.lastDodge = now;

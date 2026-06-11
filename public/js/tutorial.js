@@ -33,7 +33,7 @@ export class Tutorial {
               '<b style="color:#6fcf6f">Slimes are harmless</b> — perfect first targets for easy XP & loot!' },
       { icon: '✨', title: 'Class skills',
         body: k('Tap the <b>skill buttons</b> above the hotbar to cast your 3 class skills.',
-                'Press <b>Z / X / C</b> to cast your 3 class skills.') +
+                'Press <b>Q / E / R</b> to cast your 3 class skills.') +
               ' Learn & upgrade them in <b>Bag → Skills</b> using skill points.' },
       { icon: '⚔️', title: 'Your weapon & axe',
         body: 'Your class starts with the weapon that suits it (a mage gets a <b>wand</b>, an archer a <b>bow</b>, and so on). ' +
