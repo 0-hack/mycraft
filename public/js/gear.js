@@ -6,15 +6,18 @@
 // (everyone carries one on hotbar slot 1); the pickaxe is best at it; ranged
 // weapons (bow/gun) and the wand are weak at mining. Mining speed also scales
 // with the player's strength (see miningMult in rpg.js).
+// `reach` is the combat aim range. It carries ~1 block of extra "aim space" over
+// the bare model size so you don't have to be uncomfortably close to hit/mine —
+// melee weapons stay short relative to ranged, just not cramped.
 export const WEAPONS = {
-  fist:    { name: 'Fists',   icon: '✊', type: 'melee',  cat: 'melee',  reach: 2.2, dmg: 1, mine: 1, craftable: false },
-  sword:   { name: 'Sword',   icon: '⚔️', type: 'melee',  cat: 'melee',  reach: 3.0, dmg: 6, mine: 2, craftable: true },
-  axe:     { name: 'Axe',     icon: '🪓', type: 'melee',  cat: 'melee',  reach: 2.6, dmg: 5, mine: 4, craftable: true },
-  pickaxe: { name: 'Pickaxe', icon: '⛏️', type: 'melee',  cat: 'melee',  reach: 2.4, dmg: 2, mine: 5, craftable: true },
-  spear:   { name: 'Spear',   icon: '🔱', type: 'melee',  cat: 'melee',  reach: 3.8, dmg: 5, mine: 2, craftable: true },
-  bow:     { name: 'Bow',     icon: '🏹', type: 'ranged', cat: 'ranged', reach: 22,  dmg: 5, mine: 1, craftable: true },
-  gun:     { name: 'Gun',     icon: '🔫', type: 'ranged', cat: 'ranged', reach: 24,  dmg: 6, mine: 1, craftable: true },
-  staff:   { name: 'Staff',   icon: '🪄', type: 'ranged', cat: 'magic',  reach: 20,  dmg: 6, mine: 1, craftable: true },
+  fist:    { name: 'Fists',   icon: '✊', type: 'melee',  cat: 'melee',  reach: 3.2, dmg: 1, mine: 1, craftable: false },
+  sword:   { name: 'Sword',   icon: '⚔️', type: 'melee',  cat: 'melee',  reach: 4.0, dmg: 6, mine: 2, craftable: true },
+  axe:     { name: 'Axe',     icon: '🪓', type: 'melee',  cat: 'melee',  reach: 3.6, dmg: 5, mine: 4, craftable: true },
+  pickaxe: { name: 'Pickaxe', icon: '⛏️', type: 'melee',  cat: 'melee',  reach: 3.4, dmg: 2, mine: 5, craftable: true },
+  spear:   { name: 'Spear',   icon: '🔱', type: 'melee',  cat: 'melee',  reach: 4.8, dmg: 5, mine: 2, craftable: true },
+  bow:     { name: 'Bow',     icon: '🏹', type: 'ranged', cat: 'ranged', reach: 23,  dmg: 5, mine: 1, craftable: true },
+  gun:     { name: 'Gun',     icon: '🔫', type: 'ranged', cat: 'ranged', reach: 25,  dmg: 6, mine: 1, craftable: true },
+  staff:   { name: 'Staff',   icon: '🪄', type: 'ranged', cat: 'magic',  reach: 21,  dmg: 6, mine: 1, craftable: true },
 };
 export const DMG_PER_LEVEL = 2;
 
@@ -95,17 +98,17 @@ export function mitigate(dmg, defense) {
 // How far blocks can be mined/placed with the weapon in hand. The camera sits
 // ~1.6 blocks above the feet, so digging straight down/up needs a couple blocks
 // of straight-line reach — hence we keep the 3D ray cap generous but enforce a
-// tight *horizontal* limit. The horizontal limit is what makes it "you must
-// stand right next to the brick": axe/sword ~1 cell, spear ~2 cells, while
-// ranged weapons reach much further.
+// tighter *horizontal* limit. Melee gets ~1 block of extra aim space (so you're
+// not forced uncomfortably close to a brick to see/hit it) while staying short
+// relative to ranged: axe/sword ~2 cells, spear ~3, ranged much further.
 export function blockReach(w) {  // 3D ray cap — lets you dig straight down/up
-  return (w && (w.cat === 'ranged' || w.cat === 'magic')) ? 6 : 4.0;
+  return (w && (w.cat === 'ranged' || w.cat === 'magic')) ? 6 : 5.0;
 }
 export function blockReachH(w) { // horizontal cap — "how many bricks away"
-  if (!w) return 1.6;
+  if (!w) return 2.6;
   if (w.cat === 'ranged' || w.cat === 'magic') return 6;
-  if (w.id === 'spear') return 2.6;        // a reach weapon — about 2 bricks
-  return 1.6;                              // axe/sword/pickaxe/fist — strictly adjacent
+  if (w.id === 'spear') return 3.6;        // a reach weapon — about 3 bricks
+  return 2.6;                              // axe/sword/pickaxe/fist — about 2 bricks
 }
 
 // Cost to craft (0→1) or upgrade (L→L+1): cash + total raw-material units.

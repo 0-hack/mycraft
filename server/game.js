@@ -37,6 +37,7 @@ const KILL_SCORE = 50;
 // The boss only unleashes its ground-slam AoE when a target is this close — no
 // more slamming players from across the map.
 const BOSS_SLAM_RANGE = 8;
+const WATER_BLOCK = 9; // block id for water (matches worldgen/blocks B.WATER)
 // You can only be attacked by something on roughly your own level: fly/climb
 // above this many blocks and grounded monsters/players can't reach you. Ground
 // monsters also won't chase a target higher than this (they stay grounded).
@@ -1409,7 +1410,11 @@ function mobBlocked(x, z, y) {
   if (inSafeZone(x, z)) return true; // monsters (and the boss) cannot enter sanctuaries
   const bx = Math.floor(x), bz = Math.floor(z);
   const by = Math.round(y); // standing level (feet rest on the block below this)
-  return isSolidAt(bx, by, bz) || isSolidAt(bx, by + 1, bz);
+  if (isSolidAt(bx, by, bz) || isSolidAt(bx, by + 1, bz)) return true;
+  // Avoid water: if the surface a mob would rest on here is liquid (the bay or a
+  // fountain pool), treat the column as impassable so monsters don't wade/sink in.
+  if (getBlockType(bx, mobFeetY(x, z, y), bz) === WATER_BLOCK) return true;
+  return false;
 }
 
 // The surface a mob at (x,z) should rest its feet on: scan downward starting
