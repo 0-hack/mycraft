@@ -392,6 +392,12 @@ body.touch #btn-view { top: clamp(74px, 13vh, 96px); right: var(--edge); bottom:
 body.touch #btn-fly { top: 45%; right: var(--edge); bottom: auto; transform: translateY(-50%);
   background: rgba(40,28,70,0.6); border-color: rgba(201,139,255,0.6); }
 body.touch #btn-fly.flying { background: rgba(95,211,160,0.8); border-color: #7fe3a0; }
+/* Target-lock toggle: right edge, just above the skill cluster and well below
+   the mid-right fly button so the two never overlap. */
+body.touch #btn-lock { right: var(--edge); top: auto;
+  bottom: calc(var(--cB) + var(--arcR) + var(--bs) + 14px);
+  background: rgba(20,30,60,0.6); border-color: rgba(120,180,255,0.6); }
+body.touch #btn-lock.on { background: rgba(95,211,160,0.8); border-color: #7fe3a0; }
 body.touch #skillbar { position: fixed; left: auto; right: 0; bottom: 0; transform: none;
   width: 0; height: 0; display: block; z-index: 17; }
 body.touch #skillbar .skill { position: absolute; width: var(--bs); height: var(--bs); }

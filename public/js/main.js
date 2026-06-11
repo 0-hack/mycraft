@@ -1201,7 +1201,7 @@ function setupInput() {
   if (isTouchDevice()) {
     setupMobileControls(player, ui, {
       onPrimaryDown: primaryDown, onPrimaryUp: primaryUp, onPlace: placeBlock, onView: toggleView,
-      onToggleFly: toggleFlight,
+      onToggleFly: toggleFlight, onToggleLock: toggleLock,
     });
   }
   setupDesktopControls();
@@ -1606,6 +1606,55 @@ function findTarget(w) {
     consider(id, 'mob', e.group.position.x, e.group.position.y + h * 0.6, e.group.position.z);
   }
   return best;
+}
+
+// ---- target lock-on (mobile) ---------------------------------------------
+// Toggle to keep the view pinned on a monster/player so you can move with the
+// joystick (and attack/skill manually) while staying faced at the target.
+let lockTarget = null;       // { id, kind } currently locked, or null
+const LOCK_GRACE = 5;        // blocks of slack past weapon reach before the lock drops
+function lockRange() {
+  const w = equippedWeapon(myEquipment);
+  return w.reach * rangeMult(myProgress, w.cat) + LOCK_GRACE;
+}
+function setLockBtn(on) { document.getElementById('btn-lock')?.classList.toggle('on', on); }
+function clearLock() { lockTarget = null; setLockBtn(false); }
+function toggleLock() {
+  if (!player || player.dead) return;
+  if (lockTarget) { clearLock(); ui.toast('🎯 Lock off'); return; }
+  player.syncCamera(); // aim from the eye, not the pulled-back 3rd-person camera
+  // Wide cone; range = current weapon's effective reach (+grace). cat 'melee'
+  // stops findTarget re-applying the range multiplier we've already included.
+  const t = findTarget({ reach: lockRange(), cat: 'melee', type: 'melee' });
+  if (!t) { ui.toast('🎯 Aim at a monster or player, then tap to lock on'); return; }
+  lockTarget = { id: t.id, kind: t.kind };
+  setLockBtn(true);
+  audio.play('skillBuff');
+  ui.toast('🎯 Locked on — move freely; your view stays on the target');
+}
+// Each frame (before movement is resolved) point the view at the locked target,
+// so joystick movement is relative to facing it. Drops the lock when the target
+// is gone or moves beyond the equipped weapon's reach.
+function updateLockOn() {
+  if (!lockTarget) return;
+  if (!player || player.dead) { clearLock(); return; }
+  let tx, ty, tz;
+  if (lockTarget.kind === 'mob') {
+    const e = mobEntities.get(lockTarget.id);
+    if (!e) { clearLock(); return; }
+    const h = (MOB_TYPES[e.type] || MOB_TYPES.slime).height;
+    tx = e.group.position.x; ty = e.group.position.y + h * 0.6; tz = e.group.position.z;
+  } else {
+    const r = remotePlayers.get(lockTarget.id);
+    if (!r || !r.group) { clearLock(); return; }
+    tx = r.group.position.x; ty = r.group.position.y + 1.0; tz = r.group.position.z;
+  }
+  const dx = tx - player.pos.x, dy = ty - (player.pos.y + 1.62), dz = tz - player.pos.z;
+  const horiz = Math.hypot(dx, dz);
+  if (Math.hypot(dx, dy, dz) > lockRange()) { clearLock(); ui.toast('🎯 Target out of range — lock released'); return; }
+  player.yaw = Math.atan2(-dx, -dz);
+  const lim = Math.PI / 2 - 0.01;
+  player.pitch = Math.max(-lim, Math.min(lim, Math.atan2(dy, horiz)));
 }
 
 // Is the straight line from `from` to (tx,ty,tz) blocked by a solid block before
@@ -2301,6 +2350,7 @@ function loop(now) {
   const dt = (now - last) / 1000;
   last = now;
 
+  updateLockOn();   // pin the view on a locked target so movement is target-relative
   player.update(dt);
   if (player.inWater) swam = true;
 

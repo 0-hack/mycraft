@@ -146,6 +146,9 @@ export function setupMobileControls(player, ui, actions) {
   // Sprinting is driven by the movement joystick (push forward to the outer
   // ring); there is no separate sprint button on touch.
   toggle('btn-view', () => actions.onView());
+  // Target-lock: tap with a monster/player in the crosshair to keep the view on
+  // them while you move; tap again to release.
+  toggle('btn-lock', () => actions.onToggleLock && actions.onToggleLock());
 
   // Fly button (wings): toggles flight mode. While flight is OFF a screen tap
   // still jumps normally; while ON, tapping the screen climbs and the joystick +
