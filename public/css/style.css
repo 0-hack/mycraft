@@ -398,6 +398,11 @@ body.touch #btn-lock { right: var(--edge); top: auto;
   bottom: calc(var(--cB) + var(--arcR) + var(--bs) + 14px);
   background: rgba(20,30,60,0.6); border-color: rgba(120,180,255,0.6); }
 body.touch #btn-lock.on { background: rgba(95,211,160,0.8); border-color: #7fe3a0; }
+/* Dodge dash: stacked just above the lock button, still clear of the fly button. */
+body.touch #btn-dodge { right: var(--edge); top: auto;
+  bottom: calc(var(--cB) + var(--arcR) + 2 * var(--bs) + 28px);
+  background: rgba(60,40,20,0.6); border-color: rgba(255,180,90,0.65); }
+body.touch #btn-dodge:active { background: rgba(255,180,90,0.7); }
 body.touch #skillbar { position: fixed; left: auto; right: 0; bottom: 0; transform: none;
   width: 0; height: 0; display: block; z-index: 17; }
 body.touch #skillbar .skill { position: absolute; width: var(--bs); height: var(--bs); }

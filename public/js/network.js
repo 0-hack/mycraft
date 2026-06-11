@@ -107,6 +107,7 @@ export class Network {
   sendSpendAttr(attr) { this.send({ type: 'spendAttr', attr }); }
   sendSpendSkill(slot) { this.send({ type: 'spendSkill', slot }); }
   sendSkill(slot, target, targetType, aim) { this.send({ type: 'useSkill', slot, target, targetType, aim }); }
+  sendDodge() { this.send({ type: 'dodge' }); }
   sendSetClass(cls) { this.send({ type: 'setClass', cls }); }
   sendAppearance(appearance) { this.send({ type: 'appearance', appearance }); }
   sendRespawn() { this.send({ type: 'respawn' }); }

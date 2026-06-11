@@ -1677,6 +1677,7 @@ function tryDodge() {
   if (Math.abs(f) > 0.05 || Math.abs(s) > 0.05) { dx = fwd.x * f + rx * s; dz = fwd.z * f + rz * s; }
   else { dx = -fwd.x; dz = -fwd.z; }
   player.startDash(dx, dz);
+  net.sendDodge();  // ask the server for brief i-frames so the dash dodges the hit
   ownSwing = 1;
   audio.play('swing');
   dodgeBlur(260);   // quick green motion rings on the avatar

@@ -94,20 +94,11 @@ export function setupMobileControls(player, ui, actions) {
     player.look((t.clientX - lookLast.x) * s, (t.clientY - lookLast.y) * s);
     lookLast = { x: t.clientX, y: t.clientY };
   }
-  let lastTap = 0;
   function endLook() {
-    // A short tap that didn't drag = jump; two such taps in quick succession =
-    // a dodge (in the joystick direction) — the second tap dodges instead of jumping.
-    const now = performance.now();
-    if (!lookStart.moved && now - lookStart.t < 250) {
-      if (now - lastTap < 300) {
-        lastTap = 0;
-        if (actions.onDodge) actions.onDodge();
-      } else {
-        lastTap = now;
-        player.input.jump = true;
-        setTimeout(() => { player.input.jump = false; }, 140);
-      }
+    // A short tap that didn't drag = jump.
+    if (!lookStart.moved && performance.now() - lookStart.t < 250) {
+      player.input.jump = true;
+      setTimeout(() => { player.input.jump = false; }, 140);
     }
     lookId = null;
   }
@@ -158,6 +149,8 @@ export function setupMobileControls(player, ui, actions) {
   // Target-lock: tap with a monster/player in the crosshair to keep the view on
   // them while you move; tap again to release.
   toggle('btn-lock', () => actions.onToggleLock && actions.onToggleLock());
+  // Dodge: tap to dash (with brief i-frames) in the joystick's direction.
+  toggle('btn-dodge', () => actions.onDodge && actions.onDodge());
 
   // Fly button (wings): toggles flight mode. While flight is OFF a screen tap
   // still jumps normally; while ON, tapping the screen climbs and the joystick +

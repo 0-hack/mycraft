@@ -38,6 +38,10 @@ const KILL_SCORE = 50;
 // more slamming players from across the map.
 const BOSS_SLAM_RANGE = 8;
 const WATER_BLOCK = 9; // block id for water (matches worldgen/blocks B.WATER)
+// A melee dodge grants this many ms of invulnerability to attacks (the dash
+// itself also repositions you). Environmental/DoT damage still applies.
+const DODGE_IFRAMES = 350;
+const UNDODGEABLE = new Set(['void', 'fall', 'starve', 'burning']);
 // You can only be attacked by something on roughly your own level: fly/climb
 // above this many blocks and grounded monsters/players can't reach you. Ground
 // monsters also won't chase a target higher than this (they stay grounded).
@@ -500,6 +504,7 @@ export function attachGame(server) {
           break;
         }
         case 'useSkill': handleSkill(ctx, ws, msg); break;
+        case 'dodge': handleDodge(ctx); break;
         case 'spendSkill': {
           const slot = msg.slot | 0;
           const p = normalizeProgress(safeParse(ctx.state.progress, null));
@@ -841,6 +846,18 @@ export function attachGame(server) {
     }
   }
 
+  // A melee dodge: brief i-frames so the dash actually evades the hit. Server
+  // validates the weapon and re-checks the cooldown so it can't be spammed.
+  function handleDodge(ctx) {
+    if (ctx.dead) return;
+    const w = equippedWeapon(safeParse(ctx.state.equipment, null));
+    if (w.cat !== 'melee') return;
+    const now = Date.now();
+    if (now - (ctx.lastDodge || 0) < getSettings().dodgeCdMs) return;
+    ctx.lastDodge = now;
+    ctx.dodgeUntil = now + DODGE_IFRAMES;
+  }
+
   function applyDamage(target, dmg, attacker, cause, fx) {
     const ts = target.state;
     if (target.dead || ts.health <= 0) return;
@@ -848,6 +865,8 @@ export function attachGame(server) {
     if (target.invulnUntil && target.invulnUntil > Date.now()) return;
     // Reading the guide, or inside a safe sanctuary → immune.
     if (isProtected(target)) return;
+    // Mid-dodge i-frames negate incoming attacks (but not fall/void/starve/burn).
+    if (target.dodgeUntil && target.dodgeUntil > Date.now() && !UNDODGEABLE.has(cause)) return;
     // PvP damage (player attacker, combat cause) is softened for fairer duels.
     if (attacker && attacker !== target && cause === 'combat') dmg = Math.max(1, Math.round(dmg * PVP_DMG_MULT));
     ts.health = Math.max(0, ts.health - dmg);
