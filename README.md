@@ -172,8 +172,8 @@ from there.
 | Jump / swim up       | `Space`                        | ⤴ button                        |
 | Sprint               | `Shift`                        | —                               |
 | Break block / attack | Left click                     | ⛏ button                        |
-| Place block          | Right click (block selected)   | 🧱 button                       |
-| Dodge dash           | Right click (weapon in hand)   | 💨 button                       |
+| Place block          | Left click (block selected)    | 🧱 button                       |
+| Dodge dash           | Right click                    | 💨 button                       |
 | Target lock          | —                              | 🎯 button (aim at a target)     |
 | Select block         | `1`–`9` / scroll wheel         | Tap a hotbar slot               |
 | Swap weapon / axe    | `1` (tap slot 1 again)         | Tap slot 1 again                |

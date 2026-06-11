@@ -397,17 +397,27 @@ body.touch #btn-view { top: clamp(74px, 13vh, 96px); right: var(--edge); bottom:
 body.touch #btn-fly { top: 45%; right: var(--edge); bottom: auto; transform: translateY(-50%);
   background: rgba(40,28,70,0.6); border-color: rgba(201,139,255,0.6); }
 body.touch #btn-fly.flying { background: rgba(95,211,160,0.8); border-color: #7fe3a0; }
-/* Target-lock toggle: right edge, just above the skill cluster and well below
-   the mid-right fly button so the two never overlap. */
+/* Dodge + lock sit SIDE BY SIDE in a single row just above the skill arc — one
+   low row (not a tall stack) so they can't reach the view button / minimap up
+   top, on any screen height. Lock hugs the right edge; dodge sits to its left. */
 body.touch #btn-lock { right: var(--edge); top: auto;
-  bottom: calc(var(--cB) + var(--arcR) + var(--bs) + 14px);
+  bottom: calc(var(--cB) + var(--arcR) + var(--bs) / 2 + 12px);
   background: rgba(20,30,60,0.6); border-color: rgba(120,180,255,0.6); }
 body.touch #btn-lock.on { background: rgba(95,211,160,0.8); border-color: #7fe3a0; }
-/* Dodge dash: stacked just above the lock button, still clear of the fly button. */
-body.touch #btn-dodge { right: var(--edge); top: auto;
-  bottom: calc(var(--cB) + var(--arcR) + 2 * var(--bs) + 28px);
+body.touch #btn-dodge { right: calc(var(--edge) + var(--bs) + var(--ui-gap)); top: auto;
+  bottom: calc(var(--cB) + var(--arcR) + var(--bs) / 2 + 12px);
   background: rgba(60,40,20,0.6); border-color: rgba(255,180,90,0.65); }
 body.touch #btn-dodge:active { background: rgba(255,180,90,0.7); }
+/* On short viewports (landscape, small phones, reduced browser height) drive the
+   whole thumb cluster off the viewport HEIGHT so it shrinks to fit and nothing
+   collides. */
+@media (max-height: 640px) {
+  body.touch {
+    --bp: clamp(46px, 12.5vh, 92px);
+    --bs: clamp(32px, 8vh, 50px);
+  }
+  body.touch #btn-view { top: clamp(58px, 11vh, 96px); }
+}
 body.touch #skillbar { position: fixed; left: auto; right: 0; bottom: 0; transform: none;
   width: 0; height: 0; display: block; z-index: 17; }
 body.touch #skillbar .skill { position: absolute; width: var(--bs); height: var(--bs); }

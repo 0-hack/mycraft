@@ -25,7 +25,7 @@ export class Tutorial {
               ' Tougher blocks take longer — a pickaxe is faster. Mined blocks become <b>materials</b> you can sell.' },
       { icon: '🧱', title: 'Build',
         body: k('Pick a block from the <b>hotbar</b> (tap a slot), then tap <b>🧱</b> to place it.',
-                'Pick a block from the <b>hotbar</b> (number keys or scroll), then <b>right-click</b> to place it.') +
+                'Pick a block from the <b>hotbar</b> (number keys or scroll), then <b>left-click</b> to place it (right-click dodges).') +
               ' Salvage towers for <b>steel, marble &amp; neon</b>, then build walls to protect your loot!' },
       { icon: '⚔️', title: 'Fight monsters',
         body: 'Aim at a monster and ' + k('tap <b>⛏</b>', '<b>left-click</b>') +

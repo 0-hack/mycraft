@@ -1266,8 +1266,8 @@ function setupDesktopControls() {
   canvas.addEventListener('mousedown', (e) => {
     if (document.pointerLockElement !== canvas) return;
     if (e.button === 0) primaryDown();
-    // Right-click: build when a block is selected, otherwise dodge (melee).
-    else if (e.button === 2) { if (ui.selectedBlock() != null) placeBlock(); else tryDodge(); }
+    // Right-click always dodges (building is on left-click when a block is selected).
+    else if (e.button === 2) tryDodge();
   });
   addEventListener('mouseup', (e) => { if (e.button === 0) primaryUp(); });
   document.addEventListener('pointerlockchange', () => {
