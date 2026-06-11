@@ -1091,6 +1091,23 @@ export function attachGame(server) {
         moved.push({ id: m.id, x: m.x, y: m.y, z: m.z, yaw: m.yaw, st: mobStatusCodes(m, now) });
         continue;
       }
+      // A boss's charged slam detonates on schedule no matter what — even if its
+      // target ducked into a sanctuary (it harmlessly fizzles there). Done here,
+      // before target acquisition, so the armed slam can't "hang" with no target
+      // and then fire later with no telegraph, killing the player the instant
+      // they step back out of the safe zone.
+      if (def.boss && m.tele && now >= m.tele.until) {
+        const tl = m.tele; m.tele = null;
+        broadcast({ type: 'bossSlam', x: tl.x, y: tl.y, z: tl.z, radius: tl.radius });
+        smashBlocks(tl.x, tl.y, tl.z, Math.min(tl.radius, 4)); // boss breaks open walls
+        for (const c of players) {
+          if (c.dead) continue;
+          if (Math.hypot(c.state.x - tl.x, c.state.z - tl.z) > tl.radius) continue;
+          if (Math.abs(c.state.y - tl.y) > VERT_LIMIT) continue; // safe if underground / well above
+          const d = defenseOf(safeParse(c.state.equipment, null)) + defenseBonus(safeParse(c.state.progress, null)) + buffMult(c, 'def', 0);
+          applyDamage(c, mitigate(tl.dmg, d), null, 'the ' + def.name + "'s slam");
+        }
+      }
       // Keep the current target only while it's within leash range AND on
       // roughly our level — a player who flies/climbs out of reach is dropped
       // so monsters don't pointlessly chase someone in the air.
@@ -1131,24 +1148,13 @@ export function attachGame(server) {
       if (m.effects.stun && m.effects.stun.until > now) { moved.push({ id: m.id, x: m.x, y: m.y, z: m.z, yaw: m.yaw, st: mobStatusCodes(m, now) }); continue; }
 
       // Boss: telegraphed ground-slam AoE that players must dodge out of.
+      // (An armed slam past its timer is already detonated above, so here m.tele
+      // only ever means "still winding up".)
       if (def.boss) {
-        if (m.tele) {
-          if (now >= m.tele.until) {                       // detonate
-            const tl = m.tele; m.tele = null;
-            broadcast({ type: 'bossSlam', x: tl.x, y: tl.y, z: tl.z, radius: tl.radius });
-            smashBlocks(tl.x, tl.y, tl.z, Math.min(tl.radius, 4)); // boss breaks open walls
-            for (const c of players) {
-              if (c.dead) continue;
-              if (Math.hypot(c.state.x - tl.x, c.state.z - tl.z) > tl.radius) continue;
-              if (Math.abs(c.state.y - tl.y) > VERT_LIMIT) continue; // safe if hiding underground / well above
-              const d = defenseOf(safeParse(c.state.equipment, null)) + defenseBonus(safeParse(c.state.progress, null)) + buffMult(c, 'def', 0);
-              applyDamage(c, mitigate(tl.dmg, d), null, 'the ' + def.name + "'s slam");
-            }
-          } else {                                          // winding up: rooted
-            m.yaw = Math.atan2(tgt.state.x - m.x, tgt.state.z - m.z);
-            moved.push({ id: m.id, x: m.x, y: m.y, z: m.z, yaw: m.yaw, st: mobStatusCodes(m, now) });
-            continue;
-          }
+        if (m.tele) {                                       // winding up: rooted, facing target
+          m.yaw = Math.atan2(tgt.state.x - m.x, tgt.state.z - m.z);
+          moved.push({ id: m.id, x: m.x, y: m.y, z: m.z, yaw: m.yaw, st: mobStatusCodes(m, now) });
+          continue;
         } else if (now - (m.lastSlam || 0) > 6000
                    && Math.hypot(tgt.state.x - m.x, tgt.state.z - m.z) <= BOSS_SLAM_RANGE) { // only slam up close
           const radius = 5.5;
