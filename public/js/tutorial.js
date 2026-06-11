@@ -31,14 +31,17 @@ export class Tutorial {
         body: 'Aim at a monster and ' + k('tap <b>⛏</b>', '<b>left-click</b>') +
               ' to attack. On the minimap, <span style="color:#e25555">red dots</span> are monsters. ' +
               '<b style="color:#6fcf6f">Slimes are harmless</b> — perfect first targets for easy XP & loot!' },
+      { icon: '🤸', title: 'Dodge & lock on',
+        body: k('Tap <b>💨</b> to <b>dodge</b> — a quick dash in your joystick\'s direction with a flash of invulnerability to slip a monster\'s swing. Tap <b>🎯</b> while aiming at a target to <b>lock</b> the camera onto it, so you can circle and attack while moving.',
+                '<b>Right-click</b> (with a weapon in hand) to <b>dodge</b> — a quick dash in your movement direction with a brief flash of invulnerability to slip a swing.') },
       { icon: '✨', title: 'Class skills',
         body: k('Tap the <b>skill buttons</b> above the hotbar to cast your 3 class skills.',
                 'Press <b>Q / E / R</b> to cast your 3 class skills.') +
               ' Learn & upgrade them in <b>Bag → Skills</b> using skill points.' },
-      { icon: '⚔️', title: 'Your weapon & axe',
-        body: 'Your class starts with the weapon that suits it (a mage gets a <b>wand</b>, an archer a <b>bow</b>, and so on). ' +
-              k('Tap <b>hotbar slot 1</b> again to swap between your weapon and your <b>🪓 axe</b>.',
-                'Press <b>1</b> (or tap slot 1) to swap between your weapon and your <b>🪓 axe</b> — handy for chopping & mining.') },
+      { icon: '🪓', title: 'Axe & your class weapon',
+        body: 'You start with the all-round <b>🪓 axe</b> in hand — your mining tool and a solid melee weapon. Your class\'s special weapon (a mage\'s <b>wand</b>, an archer\'s <b>bow</b>, and so on) plus a sword wait in the hotbar. ' +
+              k('Tap a <b>hotbar slot</b> to switch weapons (tap slot 1 again to swap weapon ⇄ axe).',
+                'Press a <b>number key</b> (or scroll) to switch weapons — tap <b>1</b> again to swap weapon ⇄ axe.') },
       { icon: '🎒', title: 'Bag, Character & Settings',
         body: k('Open your <b>🎒 Bag</b> (sell materials, equip gear, craft), your <b>⭐ Character</b> (spend attribute & skill points), and <b>⚙ Settings</b> from the top bar.',
                 'Keys: <b>B</b> = Bag (sell, gear, craft), <b>K</b> = Character (spend <b>attribute &amp; skill points</b>), <b>O</b> = Settings. You can also click the top-bar buttons.') },
@@ -48,7 +51,7 @@ export class Tutorial {
       { icon: '🩹', title: 'Heal & refuel',
         body: '<b>🩹 Healing patches</b> and <b>🍗 food</b> are scattered all over the streets — just <b>walk over one</b> to bank it. ' +
               k('Then tap the <b>🩹</b> / <b>🍗</b> buttons (next to the attack button) to use them.',
-                'Then press <b>Q</b> to use a healing patch and <b>F</b> to eat food.') },
+                'Then press <b>C</b> to use a healing patch and <b>F</b> to eat food.') },
       { icon: '🕊️', title: 'Safe sanctuaries',
         body: 'Glowing <b>🕊 safe sanctuaries</b> (like the Spawn Plaza) are no-danger zones: <b>no monsters or PvP</b>, ' +
               'and standing inside <b>fully restores your health & hunger</b>. They\'re also the only place you can ' +

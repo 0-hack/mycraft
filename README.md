@@ -53,8 +53,9 @@ no installs, no plugins. Just open a URL.
 - 👾 **Monsters & solo PvE** — harmless wandering **slimes** (great for
   beginners), zombies, fast **skeletons**, big slow **brutes** and a periodic
   **Warlord boss**, each with a distinct look. Aggressive monsters chase but are
-  slower than you and **give up if you run far enough**; **stronger monsters
-  ignore low-level players** unless attacked first; monster numbers scale with how
+  slower than you, **steer clear of water** (use it as a moat!) and **give up if
+  you run far enough**; **stronger monsters ignore low-level players** unless
+  attacked first; monster numbers scale with how
   many players are online, so you can **train solo** even when no one else is
   around. All melee — no annoying ranged pot-shots.
   Spawns **surge at night**. Slay them for XP, cash and material drops; they show
@@ -69,11 +70,17 @@ no installs, no plugins. Just open a URL.
   effects** — Fireball/Power Shot/Bomb **burn** (damage over time), Frost Nova &
   Cleave **slow**, Frost Nova & Grenade **stun** monsters — plus timed
   damage/defence/speed buffs.
+- 🤸 **Dodge & target lock** — every player can **dodge dash** (right-click on
+  desktop, or the 💨 button on mobile) in their movement direction, with brief
+  **invulnerability frames** to slip an incoming hit, on a short admin-tunable
+  cooldown. On mobile, tap **🎯 target lock** to pin the camera on a monster or
+  player so you can strafe and attack while moving — and the dash drops the lock
+  when you need to break away.
 - 🛡️ **Moderation** — the admin panel shows recent chat and can **mute** or
   **ban** accounts; a configurable chat **rate limit** curbs spam.
 - 🩹 **Healing patches & food** — collectible **medkits** (restore health) and
   **food** (restore hunger) are scattered at ground level all across the map;
-  walk over one to bank it, then use it with `Q` (medkit) / `F` (food) or the
+  walk over one to bank it, then use it with `C` (medkit) / `F` (food) or the
   on-screen buttons. Combat damage, heals and regeneration are
   server-authoritative so PvP stays fair.
 - 🕊️ **Safe sanctuaries** — glowing no-danger zones (e.g. the Spawn Plaza) where
@@ -167,6 +174,7 @@ from there.
 | Break block / attack | Left click                     | ⛏ button                        |
 | Place block          | Right click (block selected)   | 🧱 button                       |
 | Dodge dash           | Right click (weapon in hand)   | 💨 button                       |
+| Target lock          | —                              | 🎯 button (aim at a target)     |
 | Select block         | `1`–`9` / scroll wheel         | Tap a hotbar slot               |
 | Swap weapon / axe    | `1` (tap slot 1 again)         | Tap slot 1 again                |
 | Class skills         | `Q` `E` `R`                    | Skill buttons by ⛏              |
